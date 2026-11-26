@@ -1,11 +1,11 @@
-name: Update Edgemetry
+name: Update NsMetry
 
 # Nothing in here runs on its own.
 #
 # The deploy button *imports* this repository into your account rather than
 # forking it, so your copy has no parent and GitHub never offers you the "Sync
 # fork" button. This workflow is the replacement for that button: open Actions →
-# Update Edgemetry → Run workflow, and it opens a pull request carrying
+# Update NsMetry → Run workflow, and it opens a pull request carrying
 # upstream's newest release. Merging that pull request is what deploys —
 # until you merge, nothing about your instance changes.
 #
@@ -25,11 +25,11 @@ permissions:
 
 # Two of these racing would fight over the same branch.
 concurrency:
-  group: edgemetry-update
+  group: nsmetry-update
 
 env:
   UPSTREAM: https://github.com/hayaran/Edgemetry.git
-  BRANCH: edgemetry-update
+  BRANCH: nsmetry-update
 
 jobs:
   update:
@@ -55,8 +55,8 @@ jobs:
           BASE: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
-          git config user.name 'edgemetry-update'
-          git config user.email 'edgemetry-update@users.noreply.github.com'
+          git config user.name 'nsmetry-update'
+          git config user.email 'nsmetry-update@users.noreply.github.com'
 
           if git diff --quiet "origin/$BASE" upstream/main; then
             echo 'Already running the newest upstream tree — nothing to open.' >> "$GITHUB_STEP_SUMMARY"
@@ -76,7 +76,7 @@ jobs:
 
           VERSION=$(sed -n "s/.*VERSION = '\(.*\)'.*/\1/p" src/version.ts)
           : "${VERSION:=unknown}"
-          git commit --quiet -m "Update Edgemetry to v${VERSION}"
+          git commit --quiet -m "Update NsMetry to v${VERSION}"
           git push --force origin "$BRANCH"
 
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
@@ -114,7 +114,7 @@ jobs:
           # The branch is already pushed either way — the compare link finishes
           # the job by hand in one click.
           if ! gh pr create --base "$BASE" --head "$BRANCH" \
-               --title "Update Edgemetry to v${VERSION}" --body "$body" \
+               --title "Update NsMetry to v${VERSION}" --body "$body" \
                >> "$GITHUB_STEP_SUMMARY"; then
             {
               echo 'Could not open the pull request automatically. That permission is'

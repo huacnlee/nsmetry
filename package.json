@@ -1,9 +1,9 @@
 {
-  "name": "edgemetry",
-  "version": "0.3.0",
+  "name": "nsmetry",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
-  "description": "Privacy-first, self-hosted web analytics that runs entirely on Cloudflare's free tier.",
+  "description": "Privacy-first app and web analytics for a personal fleet, self-hosted on Cloudflare's free plan.",
   "license": "MIT",
   "scripts": {
     "dev": "wrangler dev",
@@ -12,10 +12,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "seed": "node scripts/seed.mjs",
-    "build:cover": "node scripts/build-cover.mjs",
-    "build:demo": "node scripts/build-demo.mjs",
     "build:map": "node scripts/build-map.mjs",
-    "build:fonts": "node scripts/build-fonts.mjs"
+    "build:web": "sh app/build-web.sh",
+    "test:sdk": "cd sdk/js && npm test"
   },
   "dependencies": {
     "hono": "^4"

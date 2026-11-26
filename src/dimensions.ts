@@ -16,6 +16,9 @@ export const DIMENSIONS: ReadonlyArray<{ dim: string; column: string }> = [
   { dim: 'utm_source', column: 'utm_source' },
   { dim: 'utm_medium', column: 'utm_medium' },
   { dim: 'utm_campaign', column: 'utm_campaign' },
+  // Constant for one install between updates, so for an app it splits users
+  // the way `browser` splits a website's: a handful of values, each a cohort.
+  { dim: 'app_version', column: 'app_version' },
 ];
 
 /** `dim` name -> raw/cube column, for the dimensions a filter may name. */

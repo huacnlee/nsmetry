@@ -7,26 +7,13 @@ import {
   RAW_COLUMNS,
   createRawTableSql,
   ensureSchema,
-  getSetting,
+  hourlyDimRows,
   listRawTables,
-  migrateLegacyAdmin,
   rawTable,
   setSetting,
 } from '../src/db';
-import {
-  type UserRow,
-  accessibleSites,
-  canAccessSite,
-  countOwners,
-  countUsers,
-  createFirstOwner,
-  createUser,
-  getUserByEmail,
-  getUserById,
-  setPassword,
-  setSiteAccess,
-  verifyPassword,
-} from '../src/users';
+import { createSession } from '../src/sessions';
+import { createUser, ensureAdminAccount } from '../src/users';
 import {
   loadBreakdown,
   loadBreakdowns,
@@ -108,6 +95,17 @@ async function insertPageview(suffix: string, options: EventOptions): Promise<vo
     .run();
 }
 
+/** One hourly dimension value, read through the packed-row reader the app uses. */
+async function hourlyDim(dim: string, val: string): Promise<{ pageviews: number; visitors: number } | null> {
+  return db
+    .prepare(
+      `SELECT pageviews, visitors FROM (${hourlyDimRows("site_id IS NOT NULL AND hour IS NOT NULL")})
+       WHERE dim = ? AND val = ?`,
+    )
+    .bind(dim, val)
+    .first<{ pageviews: number; visitors: number }>();
+}
+
 async function resetDatabase(): Promise<void> {
   for (const table of await listRawTables(db)) {
     await db.prepare(`DROP TABLE IF EXISTS ${table}`).run();
@@ -116,6 +114,10 @@ async function resetDatabase(): Promise<void> {
     'stats_hourly',
     'stats_daily',
     'stats_cube',
+    'stats_cube2',
+    'today_visits',
+    'app_daily',
+    'app_users',
     'site_access',
     'users',
     'sites',
@@ -240,13 +242,17 @@ describe('rollups', () => {
     await insertPageview('2026030210', { visitor: 'aaa', path: '/' });
     await insertPageview('2026030210', { visitor: 'bbb', path: '/' });
 
-    await rollupHour(db, 'ev_2026030210');
+    // The first fold renames the hour to `ef_`; folding that again, or a
+    // straggler that recreated `ev_`, must replace the hour, never add to it.
+    const folded = await rollupHour(db, 'ev_2026030210');
+    expect(folded).toBe('ef_2026030210');
+    await rollupHour(db, folded);
+    await insertPageview('2026030210', { visitor: 'ccc', path: '/' });
     await rollupHour(db, 'ev_2026030210');
 
-    const row = await db
-      .prepare("SELECT pageviews, visitors FROM stats_hourly WHERE dim = 'path' AND val = '/'")
-      .first<{ pageviews: number; visitors: number }>();
-    expect(row).toEqual({ pageviews: 2, visitors: 2 });
+    expect(await hourlyDim('path', '/')).toEqual({ pageviews: 3, visitors: 3 });
+    const rows = await db.prepare('SELECT COUNT(*) AS n FROM stats_hourly').first<{ n: number }>();
+    expect(rows?.n).toBe(1);
   });
 
   it('excludes custom events from pageview totals but keeps them as a dimension', async () => {
@@ -260,10 +266,7 @@ describe('rollups', () => {
       .first<{ pageviews: number }>();
     expect(total?.pageviews).toBe(1);
 
-    const event = await db
-      .prepare("SELECT val, pageviews FROM stats_hourly WHERE dim = 'event'")
-      .first<{ val: string; pageviews: number }>();
-    expect(event).toEqual({ val: 'signup', pageviews: 1 });
+    expect(await hourlyDim('event', 'signup')).toMatchObject({ pageviews: 1 });
   });
 
   it('rolls up a full day, which is more hour tables than D1 will union at once', async () => {
@@ -285,7 +288,7 @@ describe('rollups', () => {
     expect(daily).toEqual({ pageviews: 48, visitors: 25, sessions: 25 });
 
     const cube = await db
-      .prepare("SELECT COUNT(*) AS n FROM stats_cube WHERE day = '2026-03-02'")
+      .prepare("SELECT COUNT(*) AS n FROM stats_cube2 WHERE day = '2026-03-02'")
       .first<{ n: number }>();
     expect(cube?.n).toBeGreaterThan(0);
   });
@@ -325,126 +328,11 @@ describe('rollups', () => {
     await insertPageview(earlier, { visitor: 'aaa', path: '/late' });
     await catchUpToday(db, now);
 
-    const row = await db
-      .prepare("SELECT pageviews FROM stats_hourly WHERE dim = 'path' AND val = '/late'")
-      .first<{ pageviews: number }>();
-    expect(row?.pageviews).toBe(1);
+    expect((await hourlyDim('path', '/late'))?.pageviews).toBe(1);
   });
 });
 
-describe('accounts and access control', () => {
-  const ITERATIONS = 1000; // keep the suite fast; production default is 15000
-
-  beforeEach(async () => {
-    await db.prepare('INSERT INTO sites (id, domain, created_at) VALUES (2, ?, ?)').bind('beta.io', 0).run();
-  });
-
-  async function owner(email = 'owner@example.com'): Promise<UserRow> {
-    const created = await createFirstOwner(db, email, 'correct-horse-battery', ITERATIONS);
-    if (!created) throw new Error('expected to create the first owner');
-    return created;
-  }
-
-  it('only lets the first account claim ownership', async () => {
-    await owner();
-    // A second person racing a fresh deployment must not be able to take it over.
-    const second = await createFirstOwner(db, 'attacker@example.com', 'another-password', ITERATIONS);
-    expect(second).toBeNull();
-    expect(await countUsers(db)).toBe(1);
-  });
-
-  it('gives a viewer only the sites it was granted', async () => {
-    const admin = await owner();
-    const viewer = await createUser(
-      db,
-      { email: 'client@example.com', password: 'client-password', role: 'viewer', siteIds: [2] },
-      ITERATIONS,
-    );
-    if (!viewer) throw new Error('expected to create a viewer');
-
-    const ownerSites = await accessibleSites(db, admin);
-    const viewerSites = await accessibleSites(db, viewer);
-
-    expect(ownerSites.map((s) => s.domain)).toEqual(['beta.io', 'example.com']);
-    expect(viewerSites.map((s) => s.domain)).toEqual(['beta.io']);
-
-    // The check the stats endpoint relies on must agree with the visible list.
-    expect(await canAccessSite(db, viewer, 2)).toBe(true);
-    expect(await canAccessSite(db, viewer, 1)).toBe(false);
-    expect(await canAccessSite(db, admin, 1)).toBe(true);
-  });
-
-  it('revokes access as soon as a grant is removed', async () => {
-    await owner();
-    const viewer = await createUser(
-      db,
-      { email: 'client@example.com', password: 'client-password', role: 'viewer', siteIds: [1, 2] },
-      ITERATIONS,
-    );
-    if (!viewer) throw new Error('expected to create a viewer');
-
-    await setSiteAccess(db, viewer.id, [2]);
-    expect(await canAccessSite(db, viewer, 1)).toBe(false);
-    expect(await canAccessSite(db, viewer, 2)).toBe(true);
-  });
-
-  it('rejects a duplicate email instead of overwriting the account', async () => {
-    await owner();
-    const first = await createUser(
-      db,
-      { email: 'client@example.com', password: 'client-password', role: 'viewer', siteIds: [] },
-      ITERATIONS,
-    );
-    const duplicate = await createUser(
-      db,
-      { email: 'client@example.com', password: 'different-password', role: 'owner', siteIds: [] },
-      ITERATIONS,
-    );
-
-    expect(first).not.toBeNull();
-    expect(duplicate).toBeNull();
-    expect(await countUsers(db)).toBe(2);
-  });
-
-  it('verifies passwords and invalidates sessions when one changes', async () => {
-    const admin = await owner();
-    expect(await verifyPassword(admin, 'correct-horse-battery', ITERATIONS)).toBe(true);
-    expect(await verifyPassword(admin, 'wrong-password', ITERATIONS)).toBe(false);
-
-    await setPassword(db, admin.id, 'a-brand-new-password', ITERATIONS);
-    const updated = await getUserById(db, admin.id);
-
-    expect(updated?.token_version).toBe(admin.token_version + 1);
-    expect(await verifyPassword(updated!, 'a-brand-new-password', ITERATIONS)).toBe(true);
-    expect(await verifyPassword(updated!, 'correct-horse-battery', ITERATIONS)).toBe(false);
-  });
-
-  it('tracks how many owners remain so the last one cannot be removed', async () => {
-    await owner();
-    expect(await countOwners(db)).toBe(1);
-
-    await createUser(
-      db,
-      { email: 'second@example.com', password: 'second-password', role: 'owner', siteIds: [] },
-      ITERATIONS,
-    );
-    expect(await countOwners(db)).toBe(2);
-  });
-
-  it('carries a pre-user-model install forward instead of locking it out', async () => {
-    // Simulate a v1 instance: credentials in settings, no users table rows.
-    await setSetting(db, 'admin_hash', 'legacy-hash');
-    await setSetting(db, 'admin_salt', 'legacy-salt');
-
-    await migrateLegacyAdmin(db);
-
-    const migrated = await getUserByEmail(db, 'admin');
-    expect(migrated?.role).toBe('owner');
-    expect(migrated?.password_hash).toBe('legacy-hash');
-    // The credentials must not be left lying around in a second place.
-    expect(await getSetting(db, 'admin_hash')).toBeNull();
-  });
-});
+// Accounts, sign-in and access control are covered in test/auth.test.ts.
 
 describe('multiple sites on one deployment', () => {
   beforeEach(async () => {
@@ -926,46 +814,33 @@ describe('the update check', () => {
   });
 
   it('offers the update line to an owner and withholds it from a viewer', async () => {
-    const password = 'correct horse battery staple';
-    const iterations = Number(env.PBKDF2_ITERATIONS ?? '15000');
-
-    await createFirstOwner(db, 'owner@example.com', password, iterations);
-    await createUser(
-      db,
-      { email: 'viewer@example.com', password, role: 'viewer', siteIds: [1] },
-      iterations,
-    );
+    // The test pool sets ADMIN_EMAIL to owner@example.com (vitest.config.ts).
+    const owner = await ensureAdminAccount(db, 'owner@example.com');
+    const viewer = await createUser(db, { email: 'viewer@example.com', siteIds: [1] });
+    if (!owner || !viewer) throw new Error('expected both accounts');
     await setSetting(
       db,
       SETTING_UPDATE,
       JSON.stringify({ current: VERSION, latest: 'v99.0.0', behind: 1, url: 'x', checked: 0 }),
     );
 
-    /** Sign in over HTTP and read /api/me the way the console does. */
-    const meAs = async (email: string): Promise<Record<string, unknown>> => {
-      const login = await SELF.fetch('https://analytics.example.com/login', {
-        method: 'POST',
-        headers: { 'content-type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ email, password }),
-        redirect: 'manual',
-      });
-      expect(login.status).toBe(302);
-
-      const cookie = (login.headers.get('set-cookie') ?? '').split(';')[0] ?? '';
+    /** Read /api/me with a bearer token, the way the app does. */
+    const meAs = async (userId: number): Promise<Record<string, unknown>> => {
+      const token = await createSession(db, userId);
       const response = await SELF.fetch('https://analytics.example.com/api/me', {
-        headers: { cookie },
+        headers: { authorization: `Bearer ${token}` },
       });
       expect(response.status).toBe(200);
       return await response.json();
     };
 
-    const owner = await meAs('owner@example.com');
-    expect(owner.update).toMatchObject({ behind: 1, latest: 'v99.0.0' });
+    const asOwner = await meAs(owner.id);
+    expect(asOwner.update).toMatchObject({ behind: 1, latest: 'v99.0.0' });
 
-    const viewer = await meAs('viewer@example.com');
-    expect(viewer.update).toBeNull();
+    const asViewer = await meAs(viewer.id);
+    expect(asViewer.update).toBeNull();
     // The version itself is not a secret — knowing it is how anyone reports a bug.
-    expect(viewer.version).toBe(VERSION);
+    expect(asViewer.version).toBe(VERSION);
   });
 });
 

@@ -38,8 +38,10 @@ const BROWSERS: Array<[RegExp, string]> = [
 const SYSTEMS: Array<[RegExp, string]> = [
   [/\bWindows NT\b/, 'Windows'],
   [/\bAndroid\b/, 'Android'],
-  [/\b(?:iPhone|iPad|iPod)\b/, 'iOS'],
+  [/\b(?:iPhone|iPad|iPod)\b|\biP(?:ad)?OS\b|\biOS\b/, 'iOS'],
   [/\bCrOS\b/, 'ChromeOS'],
+  [/\bmacOS\b/, 'macOS'],
+  [/\bWindows\b/, 'Windows'],
   [/\bMac OS X\b|\bMacintosh\b/, 'macOS'],
   [/\bLinux\b|\bX11\b/, 'Linux'],
 ];
@@ -52,6 +54,11 @@ export function parseUa(ua: string): UaInfo {
       break;
     }
   }
+
+  // Anything that is not a browser — every browser still opens with the
+  // `Mozilla/` token for compatibility — is a native client calling the HTTP
+  // API, which reads more usefully as "App" than as "Other".
+  if (browser === 'Other' && ua !== '' && !/^Mozilla\//.test(ua)) browser = 'App';
 
   let os = 'Other';
   for (const [pattern, name] of SYSTEMS) {

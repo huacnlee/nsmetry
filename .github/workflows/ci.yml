@@ -40,3 +40,32 @@ jobs:
       - run: npm run typecheck
 
       - run: npm test
+
+      # The JavaScript SDK (sdk/js) has its own Node suite.
+      # No lockfile: its only dependencies are TypeScript and Vitest, for development.
+      - run: npm install --no-audit --no-fund
+        working-directory: sdk/js
+      - run: npm run typecheck
+        working-directory: sdk/js
+      - run: npm test
+        working-directory: sdk/js
+
+  # The apps (app/) and the NSH SDK (sdk/nsh) with its example app: type-checked, built and tested by `nsh`
+  # on the current NSH nightly, the same commit release.yml packages with, so an NSH change that breaks
+  # the app shows up here instead of at release time.
+  nsh:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-nsh
+        with:
+          target: linux
+      - run: nsh check
+      - run: nsh build
+      - run: nsh test
+      - run: nsh check
+        working-directory: sdk/nsh/example
+      - run: nsh build
+        working-directory: sdk/nsh/example
+      - run: nsh test
+        working-directory: sdk/nsh/example

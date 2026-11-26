@@ -1,0 +1,200 @@
+# Packages the NsMetry apps. A tag `vX.Y.Z` publishes them on that GitHub release; a pull request touching the
+# packaging, or a run by hand, only builds them (workflow artifacts).
+#
+# Assets (names carry no version, so `releases/latest/download/<asset>` always resolves):
+#   nsmetry-web.tar.gz            the web app the Worker serves. scripts/web-package.mjs downloads it, checked
+#                                 against sha256sums, when a deploy has no nsh CLI (the Deploy button, Workers
+#                                 Builds), so it must exist on every release a deployment can be on.
+#   nsmetry-macos-arm64.zip       NsMetry.app, ad-hoc signed (right-click › Open the first time)
+#   nsmetry-windows-x86_64.zip    NsMetry.exe and its files
+#   nsmetry-linux-x86_64.tar.gz   the Linux app
+#   nsmetry-android.apk           signed with the release key when the secrets below are set
+#   nsmetry-ios-unsigned.ipa      for sideloading (sign with your own Apple ID: Sideloadly, AltStore)
+#   nsmetry-ios-simulator.zip     NsMetry.app for the iOS Simulator (`xcrun simctl install booted NsMetry.app`)
+#   sha256sums                    every asset above
+#
+# Secrets (Settings › Secrets and variables › Actions); all optional except where noted:
+#   ANDROID_KEYSTORE_BASE64       a release keystore, base64. Set it before relying on Android updates: Android refuses
+#   ANDROID_KEY_ALIAS             an update signed with a different key, and without these a tag ships a debug-signed APK.
+#   ANDROID_KEYSTORE_PASSWORD
+#   NSH_PACKAGE_KEY               the NSH release signing key and its certificate (`nsh keys`). When both are set,
+#   NSH_PACKAGE_CERT              the release also carries nsmetry-<version>.nshpkg and a signed update manifest
+#                                 (latest.json + latest.json.sig) for NSH's updater. Installed apps follow it once
+#                                 nsh.json has an `updater` block naming its URL and public key.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - .github/actions/setup-nsh/**
+      - app/build-web.sh
+      - nsh.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  package:
+    name: package (${{ matrix.asset }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: web, os: ubuntu-24.04, asset: nsmetry-web.tar.gz }
+          - { target: linux, os: ubuntu-24.04, asset: nsmetry-linux-x86_64.tar.gz }
+          - { target: windows, os: windows-latest, asset: nsmetry-windows-x86_64.zip }
+          - { target: macos, os: macos-15, asset: nsmetry-macos-arm64.zip }
+          - { target: android, os: ubuntu-24.04, asset: nsmetry-android.apk }
+          - { target: ios, os: macos-15, asset: nsmetry-ios-unsigned.ipa }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-nsh
+        with:
+          target: ${{ matrix.target }}
+
+      # A tag must name the version the Worker reports and the app is built as, or the web package
+      # web-package.mjs downloads (by package.json's version) would never be found.
+      - name: Tag matches the version
+        if: github.ref_type == 'tag'
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          for f in package.json nsh.json; do
+            v=$(python3 -c "import json,sys; print(json.load(open('$f'))['version'])")
+            [ "$v" = "$tag" ] || { echo "::error::$f says $v, the tag says $tag"; exit 1; }
+          done
+
+      - name: Package
+        env:
+          TARGET: ${{ matrix.target }}
+          ASSET: ${{ matrix.asset }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          NSH_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          args=(--build "$GITHUB_RUN_NUMBER")
+          [ "$GITHUB_REF_TYPE" != tag ] || args+=(--app-version "${GITHUB_REF_NAME#v}")
+          out="$RUNNER_TEMP/out"
+          mkdir -p assets
+          if [ "$TARGET" = web ]; then
+            app/build-web.sh "${args[@]}"
+            # Unpacked into app/dist/web/nsmetry as is, so the archive's root is the site's root.
+            tar -czf "assets/$ASSET" -C app/dist/web/nsmetry .
+            ls -l assets
+            exit 0
+          fi
+          if [ "$TARGET" = android ]; then
+            if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+              keystore="$RUNNER_TEMP/release.jks"
+              base64 --decode <<< "$ANDROID_KEYSTORE_BASE64" > "$keystore"
+              args+=(--keystore "$keystore" --key-alias "$ANDROID_KEY_ALIAS")
+            elif [ "$GITHUB_REF_TYPE" = tag ]; then
+              # Ship anyway, but say so: this APK cannot be updated in place by one signed with a release key later.
+              echo "::warning::no ANDROID_KEYSTORE_BASE64: this release's APK is debug-signed; set the keystore secrets before the next one"
+            fi
+          fi
+          nsh package --target "$TARGET" -o "$out" "${args[@]}"
+          ls -la "$out"
+          case "$TARGET" in
+            linux) mv "$out/NsMetry.tar.gz" "assets/$ASSET"; mv "$out"/NsMetry-*.tar.gz assets/ 2>/dev/null || true ;;
+            windows) mv "$out/NsMetry.zip" "assets/$ASSET"; mv "$out"/NsMetry-*.zip assets/ 2>/dev/null || true ;;
+            macos)
+              ditto -c -k --keepParent "$out/NsMetry.app" "assets/$ASSET"
+              mv "$out"/NsMetry-*.tar.gz assets/ 2>/dev/null || true
+              codesign --verify --deep --strict "$out/NsMetry.app" ;;
+            ios)
+              # Unsigned: sign it with your own Apple ID to install it.
+              mkdir "$out/Payload" && mv "$out/NsMetry.app" "$out/Payload/"
+              (cd "$out" && zip -qry - Payload) > "assets/$ASSET"
+              # And a build for the Simulator, which needs no signing at all.
+              nsh package --target ios-simulator -o "$RUNNER_TEMP/sim" "${args[@]}"
+              ditto -c -k --keepParent "$RUNNER_TEMP/sim/NsMetry.app" assets/nsmetry-ios-simulator.zip ;;
+            android) mv "$out/NsMetry.apk" "assets/$ASSET" ;;
+          esac
+          ls -l assets
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: assets/
+          if-no-files-found: error
+          compression-level: 0
+
+  publish:
+    if: github.ref_type == 'tag'
+    needs: package
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+      # nsh names its update archives after the app (NsMetry-<version>-...); release names are lowercase.
+      - name: Lowercase asset names
+        run: |
+          cd assets
+          for f in *; do l=$(printf '%s' "$f" | tr '[:upper:]' '[:lower:]'); [ "$f" = "$l" ] || mv "$f" "$l"; done
+          ls -l
+
+      - name: Check for the update signing key
+        id: ota
+        env:
+          NSH_PACKAGE_KEY: ${{ secrets.NSH_PACKAGE_KEY }}
+          NSH_PACKAGE_CERT: ${{ secrets.NSH_PACKAGE_CERT }}
+        run: |
+          if [ -n "$NSH_PACKAGE_KEY" ] && [ -n "$NSH_PACKAGE_CERT" ]; then echo "enabled=true" >> "$GITHUB_OUTPUT"; fi
+      - if: steps.ota.outputs.enabled == 'true'
+        uses: ./.github/actions/setup-nsh
+        with:
+          target: linux
+      # The app's code as a signed package and a manifest pointing at it and at the full downloads above:
+      # installed apps take the package when their runtime can run it, or offer the download otherwise.
+      - name: Sign the update package and write the manifest
+        if: steps.ota.outputs.enabled == 'true'
+        env:
+          NSH_PACKAGE_KEY: ${{ secrets.NSH_PACKAGE_KEY }}
+          NSH_PACKAGE_CERT: ${{ secrets.NSH_PACKAGE_CERT }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          keys="$RUNNER_TEMP/keys"
+          trap 'rm -rf "$keys"' EXIT
+          (umask 077 && mkdir -p "$keys" && printf '%s\n' "$NSH_PACKAGE_KEY" > "$keys/release.secret")
+          printf '%s\n' "$NSH_PACKAGE_CERT" > "$keys/release.cert"
+          nsh publish --key "$keys/release.secret" --cert "$keys/release.cert" \
+            --build "$GITHUB_RUN_NUMBER" --app-version "$version" -o "$GITHUB_WORKSPACE/assets/nsmetry-$version.nshpkg"
+          shopt -s nullglob
+          nsh update-manifest assets/nsmetry-"$version"-*.tar.gz assets/nsmetry-"$version"-*.zip --entry . \
+            --out "$RUNNER_TEMP/manifest" --key "$keys/release.secret" \
+            --package "assets/nsmetry-$version.nshpkg" \
+            --link "android=https://github.com/$GITHUB_REPOSITORY/releases/latest/download/nsmetry-android.apk"
+          mv "$RUNNER_TEMP/manifest/latest.json" "$RUNNER_TEMP/manifest/latest.json.sig" assets/
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          cd assets
+          sha256sum * > sha256sums
+          cat sha256sums
+          # release-notes.yml appends the update instructions when the release is published.
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" * --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" * --verify-tag --generate-notes --title "NsMetry $GITHUB_REF_NAME"
+          fi

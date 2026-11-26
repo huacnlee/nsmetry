@@ -1,0 +1,19 @@
+{
+  // Type-checks the sources and the tests. The build uses tsconfig.build.json.
+  "compilerOptions": {
+    "target": "es2020",
+    // DOM for fetch/Request types only: the code itself probes every global
+    // at run time, so it also runs where there is no DOM (Node, RN, Workers).
+    "lib": ["es2022", "dom"],
+    "module": "es2022",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}

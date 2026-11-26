@@ -57,7 +57,10 @@ const TRACKER_SOURCE = `(function(){
     send('pageview');
   }
 
-  window.edgemetry = function(name) { send(String(name || 'event')); };
+  window.nsmetry = function(name) { send(String(name || 'event')); };
+  // The project used to be called Edgemetry. Pages already calling
+  // edgemetry('signup') keep counting rather than throwing.
+  window.edgemetry = window.nsmetry;
 
   var history = window.history;
   if (history.pushState) {

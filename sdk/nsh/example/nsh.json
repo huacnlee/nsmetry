@@ -1,0 +1,11 @@
+{
+  "name": "NsMetry Example",
+  "id": "dev.nsmetry.example",
+  "version": "1.4.0",
+  "build": 1,
+  "nsh": ">=0.7",
+  "window": { "title": "NsMetry Example", "defaultSize": { "width": 720, "height": 560 } },
+  "dependencies": {
+    "nsmetry": { "path": ".." }
+  }
+}

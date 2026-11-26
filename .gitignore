@@ -8,7 +8,11 @@ dist/
 .claude/
 # Written by `npm run seed -- --days N`
 .seed.sql
-# Written by `npm run build:demo`. Generated from src/dashboard.html on every
-# push and published by .github/workflows/demo.yml, so it is never committed —
-# a checked-in copy is exactly the thing that goes stale.
-demo-dist/
+# `dist/` above also covers app/dist/web/nsmetry, the app's web build: made by
+# app/build-web.sh, or downloaded from the release by scripts/web-package.mjs
+# at deploy time, so a generated copy is never committed.
+# NSH app (nsh.json at the root, sources in app/): generated types, build
+# output and native projects. `nsh` regenerates them on every run.
+.nsh/
+app/.nsh/
+target/

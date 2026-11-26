@@ -1,63 +1,52 @@
-# Publish the static demo to GitHub Pages.
-#
-# The demo page is generated from src/dashboard.html on every push, which is the
-# whole reason it can be trusted: there is no checked-in copy of the console to
-# fall out of date with the console. The contract test runs first, so a change
-# to the API shape that scripts/demo-mock.js has not followed fails here instead
-# of quietly breaking the demo.
-#
-# One-time setup: Settings › Pages › Source › GitHub Actions.
-
-name: demo
+# The public demo on GitHub Pages: the same web app a deployment serves, opened at `?demo`, where it signs in
+# to the on-device demo server (app/demo.ts) and shows a year of made-up traffic for a small fleet of sites and
+# apps. Nothing it shows comes from, or goes to, a server.
+name: Demo
 
 on:
   push:
     branches: [main]
-  # So the demo can be republished without an empty commit.
+    paths: ["app/**", "nsh.json", "nsh.lock", "src/world.ts", ".github/workflows/demo.yml", ".github/actions/setup-nsh/**"]
   workflow_dispatch:
 
-# Pages needs these; the job itself writes nothing back to the repository.
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
-# A queued run should wait for the one in flight rather than cancel it — a
-# half-published site is worse than a slightly stale one.
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  group: demo-pages
+  cancel-in-progress: true
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
+      - uses: ./.github/actions/setup-nsh
         with:
-          node-version: 22
-          cache: npm
-
-      - run: npm ci
-
-      - name: Check the mock still matches the API
-        run: npm test
-
-      - run: npm run build:demo
-
-      - uses: actions/configure-pages@v5
-
+          target: web
+      - run: app/build-web.sh --build "$GITHUB_RUN_NUMBER"
+      # Pages serves no headers of its own choosing and no precompressed copies: drop the .br/.gz files
+      # (Pages compresses itself), and send `/` straight into the demo.
+      - name: Prepare the site
+        run: |
+          site="$RUNNER_TEMP/site"
+          cp -R app/dist/web/nsmetry "$site"
+          find "$site" \( -name '*.br' -o -name '*.gz' -o -name '_headers' \) -delete
+          sed -i 's|<head>|<head><script>if(!/[?\&]demo/.test(location.search))location.replace("?demo")</script>|' "$site/index.html"
+          touch "$site/.nojekyll"
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: demo-dist
+          path: ${{ runner.temp }}/site
 
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - id: deploy
+      - id: deployment
         uses: actions/deploy-pages@v4

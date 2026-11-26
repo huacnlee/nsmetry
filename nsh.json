@@ -1,19 +1,31 @@
 {
   "name": "NsMetry",
   "id": "dev.nsmetry.app",
-  "version": "0.4.0",
+  "version": "0.1.0",
   "build": 1,
   "entry": "app/App.tsx",
   "appearance": "system",
   "theme": "app/theme.json",
   "capabilities": {
-    "network": { "hosts": ["*"] },
+    "network": {
+      "hosts": [
+        "*"
+      ]
+    },
     "clipboard": true,
     "application": true,
-    "openUrl": { "schemes": ["https", "mailto"] }
+    "openUrl": {
+      "schemes": [
+        "https",
+        "mailto"
+      ]
+    }
   },
   "dependencies": {
     "nsh-icon": "^0.2.1",
-    "nsh-icon-lucide": "^0.2.1"
+    "nsh-icon-lucide": "^0.2.1",
+    "nsmetry": {
+      "path": "sdk/nsh"
+    }
   }
 }

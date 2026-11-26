@@ -198,3 +198,26 @@ jobs:
           else
             gh release create "$GITHUB_REF_NAME" * --verify-tag --generate-notes --title "NsMetry $GITHUB_REF_NAME"
           fi
+
+  # The nsmetry nshm (sdk/nsh) on crates.io, so `nsh add nsmetry` gets it. Most releases leave the SDK alone:
+  # this publishes only when sdk/nsh/Cargo.toml names a version crates.io does not have yet (bump it there to
+  # publish) and the CARGO_REGISTRY_TOKEN secret is set; otherwise it says why it skipped. The example app's
+  # tests in ci.yml are what verify the package, so the upload itself skips cargo's build.
+  crate:
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish the nsmetry crate when its version is new
+        working-directory: sdk/nsh
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+          if curl -fsS -o /dev/null -A "nsmetry-release (+https://github.com/$GITHUB_REPOSITORY)" "https://crates.io/api/v1/crates/nsmetry/$version"; then
+            echo "::notice::nsmetry $version is already on crates.io: skipped"
+          elif [ -z "$CARGO_REGISTRY_TOKEN" ]; then
+            echo "::warning::nsmetry $version is not on crates.io, but CARGO_REGISTRY_TOKEN is not set: skipped"
+          else
+            cargo publish --no-verify
+          fi

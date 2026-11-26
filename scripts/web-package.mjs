@@ -41,7 +41,7 @@ import { fileURLToPath } from 'node:url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const out = join(root, 'app', 'dist', 'web', 'nsmetry');
 const index = join(out, 'index.html');
-const REPO = 'https://github.com/hayaran/Edgemetry';
+const REPO = 'https://github.com/huacnlee/nsmetry';
 const PLACEHOLDER_MARK = '<!-- nsmetry:placeholder -->';
 const mode = process.env.NSMETRY_WEB ?? '';
 

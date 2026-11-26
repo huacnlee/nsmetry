@@ -13,8 +13,9 @@ import {
   api, currentServer, currentSite, currentUser, instance, isOwner, refreshAccount,
 } from "../store";
 import {
-  Button, ConfirmDialog, EmptyState, Panel, PropertyList, StatusPill, Tag, toast, Txt,
+  Button, ConfirmDialog, EmptyState, Panel, PropertyList, StatusPill, Switch, Tag, toast, Txt,
 } from "../ui";
+import { setSharingUsage, sharingUsage } from "../telemetry";
 import { firstInstallTab, InstallTabs } from "./install";
 import { ScreenFrame } from "./frame";
 import { defaultTrackerSrc, type InstallTarget } from "./settings/snippets";
@@ -69,6 +70,20 @@ function InstancePanel() {
                   </View>
                 )}
               </If>
+            ),
+          },
+          {
+            label: "Usage data",
+            value: (
+              <View class="gap-1">
+                <Switch
+                  testID="share-usage"
+                  label="Share anonymous usage data"
+                  checked={sharingUsage()}
+                  onChange={setSharingUsage}
+                />
+                <Txt size="caption" tone="muted">Which screens and platforms NsMetry is used on, sent to the NsMetry project. Never your sites' numbers or your address.</Txt>
+              </View>
             ),
           },
         ]}

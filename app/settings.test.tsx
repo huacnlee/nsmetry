@@ -1,6 +1,6 @@
 /**
  * Settings, headless against a fake instance: the install tabs are prefilled with this server and
- * the site key (a domain opens on Website, a bare name on NSH app), copy puts the block on the
+ * the site key (a domain opens on Website, a bare name on Not sure), copy puts the prompt on the
  * clipboard, the admin's script URL override is saved and refused in the server's words, removing a
  * site asks first, and a viewer sees neither admin control.
  */
@@ -40,42 +40,44 @@ async function openSettings(user = owner, site = 7, over: Routes = {}) {
 }
 
 describe("install", () => {
-  test("a domain opens on Website with its snippet; the site is Live", async () => {
+  test("a domain opens on Website with a prompt carrying the script tag; the site is Live", async () => {
     const a = await openSettings();
     await a.waitFor("id:install-website");
-    await a.waitUntil(() => hasText(a.texts(), `<script defer src="${S}/em.js" data-domain="example.com"></script>`));
     await a.waitFor("text:Live");
-    await a.press("id:snippet-website-copy");
-    await a.waitUntil(() => (a.clipboard() ?? "").includes('data-domain="example.com"'));
+    await a.press("id:copy-prompt-website");
+    await a.waitUntil(() => (a.clipboard() ?? "").includes(`<script defer src="${S}/em.js" data-domain="example.com"></script>`));
+    expect(a.clipboard() ?? "").toContain("Site key: example.com");
+    expect(a.clipboard() ?? "").not.toContain("/api/events/batch"); // a website has no batching to do
     a.dispose();
   });
 
-  test("HTTP API shows prefilled curl for one event and a batch", async () => {
+  test("Other (HTTP) prompts a batch client with the rules", async () => {
     const a = await openSettings();
     await a.press("id:install-tabs-http");
     await a.waitFor("id:install-http");
-    expect(hasText(a.texts(), `curl -X POST ${S}/api/event`)).toBe(true);
-    expect(hasText(a.texts(), `${S}/api/events/batch`)).toBe(true);
-    expect(hasText(a.texts(), '"site": "example.com"')).toBe(true);
-    expect(hasText(a.texts(), "At most 50 events per batch")).toBe(true);
+    await a.press("id:copy-prompt-http");
+    await a.waitUntil(() => (a.clipboard() ?? "").includes(`${S}/api/events/batch`));
+    expect(a.clipboard() ?? "").toContain("at most 50 per request");
+    expect(a.clipboard() ?? "").not.toContain("nsh add nsmetry");
     a.dispose();
   });
 
-  test("a bare name opens on NSH app; JavaScript and the agent prompt carry the server and site", async () => {
+  test("a bare name opens on Not sure, which covers every client; NSH and JavaScript narrow it", async () => {
     const a = await openSettings(owner, 8);
-    await a.waitFor("id:install-nsh");
-    expect(hasText(a.texts(), "nsh add nsmetry")).toBe(true);
-    expect(hasText(a.texts(), `endpoint: "${S}", site: "disktree"`)).toBe(true);
+    await a.waitFor("id:install-any");
     await a.waitFor("text:Live");
+    await a.press("id:copy-prompt-any");
+    await a.waitUntil(() => (a.clipboard() ?? "").includes("Site key: disktree"));
+    for (const part of ["nsh add nsmetry", "npm install nsmetry", "data-domain=\"disktree\"", "/api/events/batch"]) {
+      expect(a.clipboard() ?? "").toContain(part);
+    }
+    await a.press("id:install-tabs-nsh");
+    await a.waitFor("id:install-nsh");
+    await a.press("id:copy-prompt-nsh");
+    await a.waitUntil(() => (a.clipboard() ?? "").includes(`endpoint: "${S}", site: "disktree"`) && !(a.clipboard() ?? "").includes("npm install"));
     await a.press("id:install-tabs-js");
     await a.waitFor("id:install-js");
     expect(hasText(a.texts(), "npm install nsmetry")).toBe(true);
-    await a.press("id:install-tabs-agent");
-    await a.waitFor("id:install-agent");
-    await a.press("id:copy-agent-prompt");
-    await a.waitUntil(() => (a.clipboard() ?? "").includes("Site key: disktree"));
-    expect(a.clipboard() ?? "").toContain(`Instance: ${S}`);
-    expect(a.clipboard() ?? "").toContain("at most 50 per request");
     a.dispose();
   });
 
@@ -129,7 +131,7 @@ describe("admin", () => {
     expect(hasText(a.texts(), "Remove example.com?")).toBe(true);
     await a.press("id:remove-site-dialog-confirm");
     await a.waitUntil(() => a.requests().some((r) => r.method === "DELETE" && r.url === `${S}/api/sites/7`));
-    await a.waitFor("id:install-nsh");
+    await a.waitFor("id:install-any");
     a.dispose();
   });
 
@@ -158,11 +160,11 @@ test("on a phone: Settings is under More, and the install tabs still switch", as
   await a.press("id:tab-more");
   await a.waitFor("id:more-settings");
   await a.press("id:more-settings");
+  await a.waitFor("id:install-any");
+  await a.press("id:install-tabs-nsh");
   await a.waitFor("id:install-nsh");
-  await a.press("id:install-tabs-agent");
-  await a.waitFor("id:install-agent");
   // Touch targets: the copy button is at least the platform's minimum.
-  const box = a.layout("id:copy-agent-prompt");
+  const box = a.layout("id:copy-prompt-nsh");
   expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
   a.dispose();
 });

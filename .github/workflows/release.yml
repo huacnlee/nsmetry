@@ -55,9 +55,9 @@ jobs:
           - { target: web, os: ubuntu-24.04, asset: nsmetry-web.tar.gz }
           - { target: linux, os: ubuntu-24.04, asset: nsmetry-linux-x86_64.tar.gz }
           - { target: windows, os: windows-latest, asset: nsmetry-windows-x86_64.zip }
-          - { target: macos, os: macos-15, asset: nsmetry-macos-arm64.zip }
+          - { target: macos, os: macos-26, asset: nsmetry-macos-arm64.zip }
           - { target: android, os: ubuntu-24.04, asset: nsmetry-android.apk }
-          - { target: ios, os: macos-15, asset: nsmetry-ios-unsigned.ipa }
+          - { target: ios, os: macos-26, asset: nsmetry-ios-unsigned.ipa }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

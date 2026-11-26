@@ -4,7 +4,7 @@
  * panel's poll: every 30 s while visible, nothing in the background, at once on coming back.
  */
 import { describe, expect, open, test } from "nsh/test";
-import { calls, desktop, hasText, S, server, signedIn } from "./fixtures/insights-server";
+import { calls, desktop, hasText, S, server, signedIn, summaryBody } from "./fixtures/insights-server";
 
 describe("overview", () => {
   test("tiles show each metric with its change; a tile selects the hero chart's metric", async () => {
@@ -87,6 +87,27 @@ describe("overview", () => {
     });
     await app.waitUntil(() => hasText(app.texts(), "database is busy"));
     expect(hasText(app.texts(), "Could not load the summary")).toBe(true);
+    app.dispose();
+  });
+});
+
+describe("overview: install entry", () => {
+  test("the header's Install tracking opens Settings", async () => {
+    const app = await open("./App.tsx", { ...desktop, storage: signedIn(), network: server() });
+    await app.waitFor("id:metric-visitors-value");
+    expect(app.texts().some((t) => t.startsWith("No data for"))).toBe(false);
+    await app.press("id:overview-install");
+    await app.waitFor("id:screen-settings");
+    app.dispose();
+  });
+
+  test("a site with nothing recorded says so and offers the install", async () => {
+    const zero = { visitors: 0, views: 0, vpv: 0, bounce: 0, time: 0 };
+    const network = server({ [`GET ${S}/api/summary*`]: { body: { ...summaryBody, totals: zero, previous: zero } } });
+    const app = await open("./App.tsx", { ...desktop, storage: signedIn(), network });
+    await app.waitFor("id:overview-no-data");
+    await app.press("id:overview-no-data >> text:Install tracking");
+    await app.waitFor("id:screen-settings");
     app.dispose();
   });
 });

@@ -83,9 +83,15 @@ export function MenuRow(props: {
  * An action menu: `nsh/base` Menu with the app's popup look (grows from its trigger; a sheet on
  * phones). `trigger` is a `Button`, `NavButton` or `AvatarButton`; children are `MenuRow`s.
  */
-export function ActionMenu(props: { trigger: JSX.Element; align?: "start" | "end"; children?: JSX.Element }) {
+export function ActionMenu(props: {
+  trigger: JSX.Element;
+  align?: "start" | "end";
+  /** Hears the menu open and close (its open state stays its own). */
+  onOpenChange?: (open: boolean) => void;
+  children?: JSX.Element;
+}) {
   return (
-    <Menu {...menuProps()} align={props.align ?? "start"} trigger={props.trigger}>
+    <Menu {...menuProps()} align={props.align ?? "start"} trigger={props.trigger} onOpenChange={(e) => props.onOpenChange?.(e.open)}>
       {props.children}
     </Menu>
   );

@@ -148,3 +148,6 @@ export const elevation = {
 
 /** The keyboard focus ring (NSH requires a visible one; allsum has none): 2pt of the theme's ring. */
 export const focusRing = (): ViewStyle => ({ outlineWidth: 2, outlineColor: token("ring"), outlineOffset: 1 });
+
+/** The window width from which the shell shows the sidebar layout; narrower is the phone layout. */
+export const WIDE = 900;

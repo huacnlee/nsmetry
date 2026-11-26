@@ -35,7 +35,8 @@ import { Brand, Sidebar } from "./sidebar";
 import { TabBar } from "./tab-bar";
 
 /** The width at which the sidebar layout starts. */
-export const WIDE = 900;
+export { WIDE } from "../ui/tokens";
+import { WIDE } from "../ui/tokens";
 
 export type ScreenMap = Record<Section, Component>;
 

@@ -2,7 +2,7 @@
  * The shell's controls, shared by the wide (sidebar) and narrow (tab bar) layouts: the site
  * switcher, the range picker, the compare toggle, the filter chips and the account menu.
  */
-import { appInfo, signal, View } from "nsh";
+import { appInfo, signal, untracked, View } from "nsh";
 import { ApiError, type Dim, RANGES, type RangeId } from "../api";
 import { formatCount } from "../format";
 import {
@@ -63,6 +63,7 @@ export function SiteSwitcher(props: { block?: boolean }) {
   const error = signal<string | null>(null);
   const busy = signal(false);
   const current = () => siteList().find((s) => s.id === currentSiteId())?.domain ?? "No site";
+  const opened = signal(0);
 
   const submit = async () => {
     if (!domain().trim()) return error.set("Enter a domain or a name.");
@@ -72,7 +73,9 @@ export function SiteSwitcher(props: { block?: boolean }) {
       const site = await addSite(domain());
       adding.set(false);
       domain.set("");
-      toast(`Added ${site.domain}`, { tone: "ok", body: "Install the tracker on it from Settings." });
+      // The next step is installing tracking on it: open Settings, where the install prompts are.
+      go("settings");
+      toast(`Added ${site.domain}`, { tone: "ok", body: "Next: install tracking. Copy a prompt below for your coding agent." });
     } catch (e) {
       error.set(e instanceof ApiError ? e.message : String(e));
     } finally {
@@ -84,6 +87,7 @@ export function SiteSwitcher(props: { block?: boolean }) {
     <>
       <ActionMenu
         align="start"
+        onOpenChange={(open) => { if (open) opened.set(opened() + 1); }}
         trigger={
           props.block ? (
             <NavButton testID="site-switcher" label={current()} icon="geography" trailing="chevronDown" accessibilityLabel={`Site: ${current()}`} />
@@ -93,9 +97,16 @@ export function SiteSwitcher(props: { block?: boolean }) {
         }
       >
         <MenuLabel>Sites</MenuLabel>
-        <Each of={siteList()} key={(s) => s.id}>
-          {(s) => <MenuRow label={s().domain} checked={s().id === currentSiteId()} onSelect={() => selectSite(s().id)} />}
-        </Each>
+        {/* Built afresh each time the menu opens: on the web a closed menu's rows missed a change made
+            while it was hidden (adding a site from the dialog left the old site checked). */}
+        {() => {
+          opened();
+          return untracked(() => (
+            <Each of={siteList()} key={(s) => s.id}>
+              {(s) => <MenuRow testID={`site-row-${s().id}`} label={s().domain} checked={s().id === currentSiteId()} onSelect={() => selectSite(s().id)} />}
+            </Each>
+          ));
+        }}
         <If when={isOwner()}>
           <MenuSep />
           <MenuRow testID="add-site" label="Add site…" icon="plus" onSelect={() => adding.set(true)} />

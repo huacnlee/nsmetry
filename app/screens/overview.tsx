@@ -14,13 +14,14 @@
  * breakdown carrying every list, one realtime every 30 s while visible. A change of compare loads
  * nothing: it only shows or hides the dashed series.
  */
-import { signal, View } from "nsh";
+import { signal, View, windowSize } from "nsh";
 import type { Dim, Metric } from "../api";
 import { METRICS } from "../api";
 import { BreakdownList } from "../components/breakdown-list";
 import { change } from "../format";
-import { comparing, currentFilters, currentRange, currentSite, rangeLabels } from "../store";
-import { Card, ChartLegend, Divider, EmptyState, Heading, MetricTile, Skeleton, Sparkline, TimeSeries } from "../ui";
+import { comparing, currentFilters, currentRange, currentSite, go, rangeLabels } from "../store";
+import { Button, Card, ChartLegend, Divider, EmptyState, Heading, MetricTile, Skeleton, Sparkline, TimeSeries } from "../ui";
+import { WIDE } from "../ui/tokens";
 import { ScreenFrame } from "./frame";
 import { breakdownResource, errorText, summaryResource } from "./insights/data";
 import { Cell, Grid } from "./insights/grid";
@@ -38,14 +39,37 @@ export function OverviewScreen() {
   const summary = summaryResource();
   const lists = breakdownResource(OVERVIEW_DIMS, 8);
   const live = createLivePoll();
+  const noData = () => {
+    const t = summary()?.totals;
+    return !!t && t.visitors === 0 && t.views === 0 && currentFilters().length === 0;
+  };
 
   return (
     <ScreenFrame
       testID="screen-overview"
       title={currentSite()?.domain ?? "Overview"}
       description={`Visitors, views and engagement · ${rangeLabels[currentRange()].long}`}
-      actions={<LiveStatus live={live} testID="overview-status" />}
+      actions={
+        <View class="flex-row items-center gap-2">
+          <LiveStatus live={live} testID="overview-status" />
+          {/* On phones the header has no room for it; the no-data card and Settings carry the install there. */}
+          <If when={windowSize().width >= WIDE}>
+            <Button label="Install tracking" icon="code" variant="outline" size="sm" onPress={() => go("settings")} testID="overview-install" />
+          </If>
+        </View>
+      }
     >
+      {/* Nothing recorded and no filter narrowing it: most likely tracking is not installed yet. */}
+      <If when={noData()}>
+        <Card testID="overview-no-data">
+          <EmptyState
+            icon="code"
+            title={`No data for ${currentSite()?.domain ?? "this site"} ${rangeLabels[currentRange()].long.toLowerCase()}`}
+            body="Install tracking on your website or app: Settings has a prompt to paste into your coding agent."
+            action={{ label: "Install tracking", onPress: () => go("settings") }}
+          />
+        </Card>
+      </If>
       <MetricsCard metric={metric()} onMetric={(m) => metric.set(m)} summary={summary} />
       <Grid min={380} testID="overview-grid">
         <Cell>

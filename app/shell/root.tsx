@@ -8,6 +8,8 @@
  * Desktop windows hide the system title bar and the shell keeps clear of the window controls.
  */
 import type { Component, JSX } from "nsh";
+import { useNsMetry, useScreenTracking } from "nsmetry";
+import { nsmetry, startTelemetry } from "../telemetry";
 import { View, windowSize } from "nsh";
 import { currentWindow, isAvailable as hasWindow, titleBar } from "nsh/desktop";
 import { Head } from "nsh/web";
@@ -24,7 +26,7 @@ import {
   UsersScreen,
 } from "../screens";
 import { SignIn } from "../signin";
-import { boot, type Section, sessionPhase, setAppearance } from "../store";
+import { boot, currentSection, detailDepth, type Section, sessionPhase, setAppearance } from "../store";
 import { size, Skeleton, space, ToastHost } from "../ui";
 import { Gallery } from "../ui/gallery";
 import { AccountMenu, CompareToggle, RangePicker, SiteSwitcher } from "./controls";
@@ -141,6 +143,10 @@ export function Root(props: { screens?: Partial<ScreenMap> }) {
   const screens: ScreenMap = { ...defaultScreens, ...(props.screens ?? {}) };
   if (hasWindow) currentWindow().set({ title: "NsMetry", titleBar: { style: "hidden", height: size.topBar } });
   void boot();
+  void startTelemetry();
+  useNsMetry(nsmetry); // flush on background / quit
+  // A screen view per section, and per detail page opened over it.
+  useScreenTracking(nsmetry, () => `/${currentSection()}${detailDepth() > 0 ? "/detail" : ""}`);
   return (
     <View class="flex-1 bg-background">
       <Head title="NsMetry" description="Privacy-first analytics." />

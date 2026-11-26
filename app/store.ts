@@ -31,6 +31,7 @@ import {
   type Site,
   type Transport,
 } from "./api";
+import { track } from "./telemetry";
 import { createDemoServer, DEMO_CODE, DEMO_EMAIL, DEMO_SERVER, isDemoServer } from "./demo";
 
 // ------------------------------------------------------------------------------------- session
@@ -158,6 +159,7 @@ export async function requestCode(email: string) {
 
 /** Step 2: trade the code for a token, persist it for this server, and enter the app. */
 export async function verifyCode(email: string, code: string): Promise<void> {
+  track("sign_in");
   const res = await api.verifySignIn(email.trim(), code.trim());
   batch(() => {
     token.set(res.token);
@@ -241,6 +243,7 @@ export function selectSite(id: number) {
 
 /** Owner only: register a site and switch to it. Throws `ApiError`. */
 export async function addSite(domain: string): Promise<Site> {
+  track("add_site", { kind: domain.includes(".") ? "domain" : "app" });
   const { site } = await api.addSite(domain.trim());
   batch(() => {
     sites.set([...sites(), site]);
@@ -270,6 +273,7 @@ export const currentFilters = () => filters();
 export const filtersAllowed = (r: RangeId = range()) => r !== "90d" && r !== "12mo";
 
 export function setRange(r: RangeId) {
+  track("range", { range: r });
   if (r === range()) return;
   if (!filtersAllowed(r)) filters.set([]);
   range.set(r);
@@ -280,6 +284,7 @@ export function setCompare(on: boolean) {
   void savePrefs();
 }
 export function toggleCompare() {
+  track("compare");
   setCompare(!compare());
 }
 
@@ -288,6 +293,7 @@ export function toggleCompare() {
  * a filtered dimension replaces it (narrowing to two paths at once is not something the UI offers).
  */
 export function addFilter(dim: Dim, value: string) {
+  track("filter", { dim });
   if (!canFilter(dim) || !filtersAllowed()) return;
   const rest = filters().filter((f) => f.dim !== dim);
   filters.set([...rest, { dim, value }]);

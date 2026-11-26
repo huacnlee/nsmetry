@@ -225,7 +225,7 @@ for `npm run deploy`):
 | `ADMIN_EMAIL` | *(empty)* | **Required.** The administrator. Changing it and redeploying moves the role to another address. |
 | `MAIL_FROM` | *(empty)* | Sender for Cloudflare Email Sending, with the `EMAIL` binding. |
 | `HOURLY_RETENTION_DAYS` | `7` | How long hour-resolution data is kept. Daily data is kept forever. |
-| `FILTERS` | `on` | Only affects days stored by releases before 0.4; leave it on. |
+| `FILTERS` | `on` | Only affects days stored by the older Edgemetry releases this project grew from; leave it on. |
 | `UPDATE_CHECK` | `on` | Once a day the Worker asks GitHub for the newest release, so **Settings** can tell you when you are behind. `off` makes no request. |
 
 Secret: `SMTP` (see [email](#3-set-up-email)). If you rename the Worker, rename

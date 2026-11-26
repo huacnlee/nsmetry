@@ -1,7 +1,7 @@
 {
   "name": "NsMetry",
   "id": "dev.nsmetry.app",
-  "version": "0.4.0",
+  "version": "0.1.0",
   "build": 1,
   "entry": "app/App.tsx",
   "appearance": "system",

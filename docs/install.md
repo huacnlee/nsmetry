@@ -28,7 +28,7 @@ nothing if the check fails. It runs as the current user and needs no `sudo`. Giv
 `sh -s --`:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/huacnlee/nsmetry/main/scripts/install.sh | sh -s -- --version 0.4.0 --dir ~/opt
+curl -fsSL https://raw.githubusercontent.com/huacnlee/nsmetry/main/scripts/install.sh | sh -s -- --version 0.1.0 --dir ~/opt
 ```
 
 | Option | Variable | Default |
@@ -79,7 +79,7 @@ To give options, download the script and run it:
 
 ```powershell
 Invoke-WebRequest https://raw.githubusercontent.com/huacnlee/nsmetry/main/scripts/install.ps1 -OutFile "$env:TEMP\nsmetry-install.ps1"
-& "$env:TEMP\nsmetry-install.ps1" -Version 0.4.0 -InstallDir "$env:LOCALAPPDATA\Programs\NsMetry"
+& "$env:TEMP\nsmetry-install.ps1" -Version 0.1.0 -InstallDir "$env:LOCALAPPDATA\Programs\NsMetry"
 ```
 
 `NSMETRY_VERSION` and `NSMETRY_INSTALL_DIR` set the same defaults. The default folder is

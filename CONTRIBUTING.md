@@ -161,6 +161,10 @@ When you add an event through `track()`:
    Asset names carry no version, so `releases/latest/download/<asset>` always
    resolves; `scripts/install.sh` and `install.ps1` depend on these names.
    `.github/workflows/release-notes.yml` then appends the update instructions.
+4. The `crate` job publishes the `nsmetry` nshm (`sdk/nsh`) to crates.io only
+   when `sdk/nsh/Cargo.toml` has a version crates.io does not have yet. Leave
+   that version alone to skip it (the usual case); bump it, with
+   `sdk/nsh/nsh.json`, to publish the SDK with the release.
 
 Secrets (repository settings › Secrets and variables › Actions):
 
@@ -168,6 +172,8 @@ Secrets (repository settings › Secrets and variables › Actions):
   the Android release key. Without them a tag ships a debug-signed APK, which a
   later release-signed APK cannot update in place. Set them before relying on
   Android updates.
+- `CARGO_REGISTRY_TOKEN` (optional): a crates.io token for the `crate` job.
+  Without it a new SDK version is skipped with a warning.
 - `NSH_PACKAGE_KEY`, `NSH_PACKAGE_CERT` (optional): sign an `.nshpkg` and an
   update manifest for NSH's in-app updater.
 

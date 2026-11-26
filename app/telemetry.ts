@@ -3,7 +3,7 @@
  * `nsmetry`: which screens are used, on which platform and version, and a few actions. Never the
  * numbers an instance holds, its address, or who is signed in; the user id is an anonymous install id.
  *
- * On by default and off from Settings › This instance ("Share usage data"); the choice is kept on the
+ * On by default and off from Settings › This instance ("Share anonymous usage data"); the choice is kept on the
  * device. Only release builds send (`nsh package`, the web build): `nsh run` and `nsh test` never do.
  */
 import { appInfo, signal, Storage } from "nsh";

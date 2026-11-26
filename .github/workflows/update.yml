@@ -28,7 +28,7 @@ concurrency:
   group: nsmetry-update
 
 env:
-  UPSTREAM: https://github.com/hayaran/Edgemetry.git
+  UPSTREAM: https://github.com/huacnlee/nsmetry.git
   BRANCH: nsmetry-update
 
 jobs:
@@ -98,7 +98,7 @@ jobs:
           fi
 
           body=$(printf '%s\n' \
-            "Upstream release notes: https://github.com/hayaran/Edgemetry/releases" \
+            "Upstream release notes: https://github.com/huacnlee/nsmetry/releases" \
             "" \
             "This commit replaces every tracked file with upstream's copy. Your data" \
             "is not in this repository and neither is your configuration — the sites," \

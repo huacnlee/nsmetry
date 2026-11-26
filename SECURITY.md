@@ -5,7 +5,7 @@
 Please do not open a public issue for a security problem.
 
 Report it through GitHub's private advisory form —
-[**Report a vulnerability**](https://github.com/hayaran/Edgemetry/security/advisories/new)
+[**Report a vulnerability**](https://github.com/huacnlee/nsmetry/security/advisories/new)
 — which is visible only to the maintainers until a fix is published.
 
 Include what you did, what happened, and what you expected. A minimal

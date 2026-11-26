@@ -26,8 +26,8 @@ import { VERSION } from './version';
  * from a shared pool, so the API would 403 for reasons that have nothing to do
  * with this instance. The feed is served by github.com proper and answers
  * plainly. */
-const RELEASES_ATOM = 'https://github.com/hayaran/Edgemetry/releases.atom';
-const RELEASES_PAGE = 'https://github.com/hayaran/Edgemetry/releases';
+const RELEASES_ATOM = 'https://github.com/huacnlee/nsmetry/releases.atom';
+const RELEASES_PAGE = 'https://github.com/huacnlee/nsmetry/releases';
 
 export const SETTING_UPDATE = 'update_status';
 

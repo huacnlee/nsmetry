@@ -1,6 +1,6 @@
 # nsmetry
 
-The JavaScript client for [NsMetry](https://github.com/hayaran/edgemetry), the
+The JavaScript client for [NsMetry](https://github.com/huacnlee/nsmetry), the
 privacy-first analytics you host yourself on Cloudflare's free plan.
 
 - Zero dependencies, ESM with types, about 8 KB minified (3 KB gzipped).

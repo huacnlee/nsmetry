@@ -1,7 +1,7 @@
 # nsmetry for NSH
 
 Event analytics for [Native Shell (NSH)](https://nsh.dev) apps, sent to your own
-[NsMetry](https://github.com/hayaran/edgemetry) instance on Cloudflare's free
+[NsMetry](https://github.com/huacnlee/nsmetry) instance on Cloudflare's free
 plan. One TypeScript API on iOS, Android, macOS, Windows, Linux and the web.
 
 - Batches events: one request per ~5 minutes while the app has something to send (and one when it goes to the background), at most 50 events each.

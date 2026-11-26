@@ -63,7 +63,7 @@ jobs:
             'it. From a clone of your repository:' \
             '' \
             '```bash' \
-            'git remote add upstream https://github.com/hayaran/Edgemetry.git' \
+            'git remote add upstream https://github.com/huacnlee/nsmetry.git' \
             'git fetch upstream main' \
             'git reset --hard upstream/main' \
             'git reset --soft origin/main' \
@@ -76,7 +76,7 @@ jobs:
             'this one. It replaces every tracked file, so read the diff first if you have' \
             'edited any.' \
             '' \
-            '[Full detail in the README](https://github.com/hayaran/Edgemetry#taking-the-update)')
+            '[Full detail in the README](https://github.com/huacnlee/nsmetry#taking-the-update)')
 
           printf '%s\n%s\n' "$body" "$section" | gh release edit "$TAG" --notes-file -
           echo "Appended the how-to-update section to $TAG." >> "$GITHUB_STEP_SUMMARY"

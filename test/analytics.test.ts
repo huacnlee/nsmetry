@@ -698,18 +698,18 @@ describe('the update check', () => {
   // titles are prose, and the tag only appears in the link.
   const feed = `<?xml version="1.0" encoding="UTF-8"?>
     <feed xmlns="http://www.w3.org/2005/Atom">
-      <link type="text/html" rel="alternate" href="https://github.com/hayaran/Edgemetry/releases"/>
+      <link type="text/html" rel="alternate" href="https://github.com/huacnlee/nsmetry/releases"/>
       <entry>
         <title>The one with the world map</title>
-        <link rel="alternate" type="text/html" href="https://github.com/hayaran/Edgemetry/releases/tag/v0.3.0"/>
+        <link rel="alternate" type="text/html" href="https://github.com/huacnlee/nsmetry/releases/tag/v0.3.0"/>
       </entry>
       <entry>
         <title>v0.2.0</title>
-        <link rel="alternate" type="text/html" href="https://github.com/hayaran/Edgemetry/releases/tag/v0.2.0"/>
+        <link rel="alternate" type="text/html" href="https://github.com/huacnlee/nsmetry/releases/tag/v0.2.0"/>
       </entry>
       <entry>
         <title>First cut</title>
-        <link rel="alternate" type="text/html" href="https://github.com/hayaran/Edgemetry/releases/tag/v0.1.0"/>
+        <link rel="alternate" type="text/html" href="https://github.com/huacnlee/nsmetry/releases/tag/v0.1.0"/>
       </entry>
     </feed>`;
 
@@ -718,7 +718,7 @@ describe('the update check', () => {
   });
 
   it('ignores the feed-level link, which has no tag segment', () => {
-    expect(releaseTags('<link href="https://github.com/hayaran/Edgemetry/releases"/>')).toEqual([]);
+    expect(releaseTags('<link href="https://github.com/huacnlee/nsmetry/releases"/>')).toEqual([]);
   });
 
   it('compares versions numerically, not lexically', () => {
@@ -739,7 +739,7 @@ describe('the update check', () => {
     const status = statusFrom(feed, 'v0.1.0');
     expect(status.behind).toBe(2);
     expect(status.latest).toBe('v0.3.0');
-    expect(status.url).toBe('https://github.com/hayaran/Edgemetry/releases/tag/v0.3.0');
+    expect(status.url).toBe('https://github.com/huacnlee/nsmetry/releases/tag/v0.3.0');
     // The feed still reaches back past this build, so the count is exact.
     expect(status.atLeast).toBe(false);
   });
@@ -759,7 +759,7 @@ describe('the update check', () => {
     const entries = Array.from(
       { length: FEED_PAGE_SIZE },
       (_, i) =>
-        `<entry><link href="https://github.com/hayaran/Edgemetry/releases/tag/v1.${i}.0"/></entry>`,
+        `<entry><link href="https://github.com/huacnlee/nsmetry/releases/tag/v1.${i}.0"/></entry>`,
     ).join('');
 
     const status = statusFrom(`<feed>${entries}</feed>`, 'v0.1.0');
@@ -771,7 +771,7 @@ describe('the update check', () => {
     const status = statusFrom(feed, 'v0.3.0');
     expect(status.behind).toBe(0);
     expect(status.latest).toBe('v0.3.0');
-    expect(status.url).toBe('https://github.com/hayaran/Edgemetry/releases');
+    expect(status.url).toBe('https://github.com/huacnlee/nsmetry/releases');
   });
 
   it('clears a stale answer once the running build has caught up', async () => {

@@ -13,12 +13,12 @@ Every step below is labelled:
 
 | # | Step | |
 |---|---|---|
-| 1 | [Rate-limit the login endpoint](#1-rate-limit-the-login-endpoint) | **Required** |
-| 2 | [Make sure you can get back in](#2-make-sure-you-can-get-back-in) | **Required** |
+| 1 | [Make sure you can always get a code](#1-make-sure-you-can-always-get-a-code) | **Required** |
+| 2 | [Know how to cut access off](#2-know-how-to-cut-access-off) | **Required** |
 | 3 | [Check that the rollups are running](#3-check-that-the-rollups-are-running) | **Required** |
 | 4 | [Keep `database_id` out of a public fork](#4-keep-database_id-out-of-a-public-fork) | Required *if public* |
-| 5 | [Put the dashboard behind Cloudflare Access](#5-put-the-dashboard-behind-cloudflare-access) | Recommended |
-| 6 | [Watch the D1 write budget](#6-watch-the-d1-write-budget) | Recommended |
+| 5 | [Rate-limit sign-in at the edge](#5-rate-limit-sign-in-at-the-edge) | Recommended |
+| 6 | [Watch the D1 budget](#6-watch-the-d1-write-budget) | Recommended |
 | 7 | [Rename the tracker file](#7-rename-the-tracker-file) | Recommended |
 | 8 | [Ignore your own visits](#8-ignore-your-own-visits) | Recommended |
 | 9 | [Back up beyond Time Travel](#9-back-up-beyond-time-travel) | Optional |
@@ -29,116 +29,86 @@ Every step below is labelled:
 
 ## First, confirm what Getting started already did
 
-Three things that used to live here are now part of
-[Getting started](README.md#getting-started), because you cannot reach a working
-dashboard without them: **claiming the instance**, **putting it on a hostname you
-own**, and **keeping `*.workers.dev` off**. If you followed the README, all three
-are done.
+[Getting started](README.md#getting-started) put the instance on a hostname you
+own and named its administrator. Both fail silently, so verify rather than assume.
 
-They are worth thirty seconds of verification rather than assumption, because
-each one fails silently.
+**`ADMIN_EMAIL` is set.** Open the app on your hostname and ask for a code for
+your address. *"This server is not set up yet"* means it is still empty. Nobody
+else can take the instance over in the meantime — there is no setup form to
+claim — but nobody can sign in either.
 
-**The instance is claimed.** Visit `/setup` on your hostname. You should be
-bounced to the login page. If you get the setup form instead, the instance is
-unclaimed and the first stranger to find that URL becomes its permanent owner —
-go create your account now.
-
-**It is on your own domain.** Check the address bar. `*.workers.dev` is a shared
-hostname that ad blockers, corporate DNS filters and some countries block
-wholesale, so your beacons vanish with no error and the numbers simply come in
-low. It also belongs to Cloudflare's zone rather than yours, which makes step 1
-below *impossible* — WAF rules cannot attach to it.
-
-**`workers.dev` is off.** This is the one people miss, because the dashboard is
-working fine by then. An extra live hostname bypasses every protection you attach
-to the real one — Access policies, rate limiting, firewall rules — and serves the
-login page to anyone who guesses it, the same mistake as leaving an origin IP
-exposed behind a WAF. Button deploys most likely never enabled it; a
-`wrangler deploy` did. Set `"workers_dev": false` in `wrangler.jsonc`, redeploy,
-and confirm rather than trusting the dashboard summary:
+**It is on your own domain, and `workers.dev` is off.** `*.workers.dev` is a
+shared hostname that ad blockers and DNS filters block wholesale, so beacons
+vanish and the numbers come in low; and WAF rules cannot attach to it, so step 5
+is impossible there. An extra live hostname also bypasses whatever you attach to
+the real one. Set `"workers_dev": false` in `wrangler.jsonc`, redeploy, and
+check:
 
 ```bash
-curl -s -o /dev/null -w '%{http_code}\n' https://edgemetry.<your-subdomain>.workers.dev/
+curl -s -o /dev/null -w '%{http_code}\n' https://nsmetry.<your-subdomain>.workers.dev/health
 ```
 
 Anything other than a connection failure or a 404 means it is still live.
 
-One thing Getting started does not mention: when you move to a new hostname later,
-update the snippet on your sites. The tracker derives its beacon endpoint from its
-own `src`, so the snippet is the only change — there is no server-side setting to
-match.
+When you move to a new hostname later, update the snippet on your sites and the
+server address in the desktop and mobile apps. The tracker derives its beacon
+endpoint from its own `src`, so there is no server-side setting to match.
 
 ---
 
-## 1. Rate-limit the login endpoint
-
-**Required.**
-
-`POST /login` has no throttle of its own — no lockout, no backoff, no 429. Ten
-wrong passwords cost an attacker about as much time as one correct one, and the
-password hash is deliberately cheap on top of that (see `PBKDF2_ITERATIONS` in
-step 10). The throttle is meant to sit in front of the Worker.
-
-1. In the Cloudflare dashboard, select the **zone** your Worker runs on and open
-   **Security rules**. On older navigation this is **Security** → **WAF** →
-   **Rate limiting rules**.
-2. **Create rule** → **Rate limiting rules**.
-3. Match **URI Path** *equals* `/login`.
-4. Under **With the same characteristics**, count by **IP**.
-5. Rate: **5 requests** per **10 seconds**.
-6. Action **Block**, duration **10 seconds**.
-
-Be clear-eyed about what the free plan gives you here. It includes exactly **one**
-rate limiting rule; the expression can test only **Path**, the counter only **IP**,
-and both the period and the block are fixed at **10 seconds**. `Request Method`
-is not matchable below Business, so this rule catches the `GET /login` that renders
-the form as well as the `POST` that submits it — which is why the limit is 5 and
-not 1. Ten seconds is a short memory. Treat this as removing the cheap unbounded
-burst, not as a lockout. A long random password is still doing most of the work.
-
-If you do step 5, Access makes this largely moot — nobody reaches `/login` at all
-without passing SSO first. The rule is still worth having underneath.
-
-## 2. Make sure you can get back in
+## 1. Make sure you can always get a code
 
 **Required. Two minutes now, or an afternoon later.**
 
-There is no password reset flow. Changing a password requires knowing the current
-one, and there is no email recovery — the Worker sends no mail. If you are the
-only owner and you lose the password, the only way back in is editing the database
-by hand.
+There are no passwords, so there is nothing to forget — but sign-in is only as
+available as the code's delivery. Codes go out by the first configured of: the
+`SMTP` secret, the Cloudflare Email Sending binding (`EMAIL` + `MAIL_FROM`), or,
+with neither, the Worker's logs.
 
-The cheap insurance is to put the password in a password manager now, and to
-create a second owner account (**Team** → Add someone, role Owner) so there is
-another way in.
+- **Send yourself a code now**, and check it lands in the inbox rather than spam.
+  Add the sender to your contacts.
+- **If mail breaks later** (an expired app password, a provider outage), sign-in
+  answers *"could not send the email"*. You do not need mail to get back in:
 
-If you are already locked out, this works. Generate a hash for the new password —
-the iteration count must match `PBKDF2_ITERATIONS` on the deployment, `15000` by
-default:
+  ```bash
+  npx wrangler secret delete SMTP          # or comment out the EMAIL binding and redeploy
+  npx wrangler tail                         # then ask for a code; it is printed here
+  ```
 
-```bash
-node --input-type=module -e '
-const password = "your-new-password";
-const iterations = 15000;
-const email = "you@example.com";
-const enc = new TextEncoder();
-const hex = (b) => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join("");
-const salt = crypto.getRandomValues(new Uint8Array(16));
-const key = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveBits"]);
-const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt, iterations, hash: "SHA-256" }, key, 256);
-console.log(`UPDATE users SET password_hash='"'"'${hex(bits)}'"'"', password_salt='"'"'${hex(salt)}'"'"', token_version=token_version+1 WHERE email='"'"'${email}'"'"';`);
-' > reset.sql
-```
+  With no transport configured the code goes to the logs (also under your Worker
+  → **Logs** in the dashboard). Only someone with your Cloudflare account can read
+  them — the same person who could edit `ADMIN_EMAIL` anyway.
+- **If you lose the mailbox itself**, set `ADMIN_EMAIL` to another address in
+  `wrangler.jsonc` and redeploy. Administrator rights follow the variable, not an
+  account in the database.
 
-Then apply it:
+The instance throttles sign-in on its own: one code per address per minute, at
+most 20 emails an hour, five tries per code, and after 20 wrong codes in a UTC
+day nobody can sign in until midnight UTC. That last rule turns guessing into, at
+worst, a one-day lockout — never a way in. Sessions you already have keep
+working through it, and the logs route above does not help during it, so step 5
+is what keeps a stranger from triggering it.
 
-```bash
-npx wrangler d1 execute edgemetry --remote --file reset.sql
-```
+## 2. Know how to cut access off
 
-Delete `reset.sql` afterwards. Bumping `token_version` is deliberate: it
-invalidates every session cookie outstanding for that account, so if the reason
-you are here is that somebody else got in, this evicts them too.
+**Required reading. Nothing to do until you need it.**
+
+The app and scripts hold a **bearer token** from sign-in, valid for 90 days since
+its last use. An agent connected over MCP holds an **OAuth grant**: a one-hour
+access token and a refresh token that rotates on every use. Tokens are stored
+only as hashes.
+
+- **A viewer leaving**: remove them under **Team**. That revokes their tokens and
+  disconnects their agents on their next request.
+- **An agent you no longer trust**: disconnect it under **Agents**. Each person
+  sees and disconnects their own.
+- **A lost phone or laptop**, or anything worse: revoke every session and every
+  agent at once, then sign in again:
+
+  ```bash
+  npx wrangler d1 execute nsmetry --remote --command \
+    "DELETE FROM sessions; DELETE FROM oauth_grants; DELETE FROM oauth_codes;"
+  ```
 
 ## 3. Check that the rollups are running
 
@@ -156,7 +126,7 @@ when you hit the D1 daily limit.
 Check directly:
 
 ```bash
-npx wrangler d1 execute edgemetry --remote --command \
+npx wrangler d1 execute nsmetry --remote --command \
   "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'ev\_%' ESCAPE '\' ORDER BY name"
 ```
 
@@ -181,46 +151,32 @@ already created:
 git checkout wrangler.jsonc
 ```
 
-## 5. Put the dashboard behind Cloudflare Access
+## 5. Rate-limit sign-in at the edge
 
-**Recommended. Free for up to 50 users.**
+**Recommended. Free, on a hostname you own.**
 
-Access is an authentication proxy that runs at Cloudflare's edge *before* your
-Worker executes, so it puts SSO in front of the dashboard without any code change.
-It scopes by hostname and path, not by Worker — a single Worker serving both the
-dashboard and the public tracker is not an obstacle.
+The Worker's own limits make guessing a code useless, but anyone can still spend
+them: request codes for your address until the hourly mail limit is hit, or send
+20 wrong codes and lock sign-in for the rest of the UTC day. An edge rule stops
+that before the Worker runs.
 
-The catch is that the tracker script and the beacon endpoint **must** stay
-reachable by anonymous visitors on other people's sites. So you cannot simply
-protect everything.
+1. In the Cloudflare dashboard, select the **zone** your Worker runs on and open
+   **Security rules** (older navigation: **Security** → **WAF** → **Rate limiting
+   rules**).
+2. **Create rule** → **Rate limiting rules**.
+3. Match **URI Path** *starts with* `/api/auth/` (on the free plan, which only
+   offers *equals*, use `/api/auth/verify`).
+4. Count by **IP**. Rate: **5 requests** per **10 seconds**. Action **Block** for
+   **10 seconds**.
 
-The clean arrangement is two custom domains on the same Worker:
-
-- `stats.example.com` — the dashboard, with Access over the whole hostname
-- `t.example.com` — public, serving the tracker and receiving beacons
-
-Access then covers an entire hostname, which is the configuration with no sharp
-edges. The alternative — one hostname, Access on `/` plus Bypass policies on the
-tracker paths — does work, since the more specific path wins. Avoid it. The bypass
-list has to match whichever filename you chose in step 7, and if you ever rename
-that file, tracking dies silently behind a login page.
-
-**Once the two hostnames are up, tell the dashboard about the public one.** Under
-**Settings → Script URL**, set it to `https://t.example.com/em.js`. This
-matters more than it looks: left empty, the console builds its install snippet
-from its own origin, which is now the hostname *behind Access*. Paste that into
-your site and every visitor beacon is answered with a login page instead of being
-recorded — no error, no warning, just a dashboard that stays empty. Setting the
-field once is the whole fix.
-
-Two things to know before committing:
-
-- **Access does not replace the Edgemetry login.** The Worker still wants its own
-  session cookie, so you sign in twice. That is defensible as defence in depth.
-  Teaching the Worker to trust Access instead means properly validating the JWT it
-  attaches, not merely reading the header, which is real work.
-- **Scripted API access breaks.** Calls to `/api/timeseries` and friends will get
-  an HTML login page unless they carry an Access service token.
+The free plan includes exactly one rate limiting rule, with a 10-second period
+and block. That removes the cheap burst; it is not a lockout. If you also want
+SSO in front of the app, Cloudflare Access works — but give the tracker its own
+hostname (`t.example.com`) first, because visitors on your sites must reach the
+tracker and its beacon anonymously, and set that hostname as the script address
+under **Settings** so the install snippets use it. Access in front of `/mcp`,
+`/oauth/*` and `/api/*` breaks the desktop and mobile apps and every agent, which
+cannot pass an Access login; keep it to the web app's own pages if you use it.
 
 ## 6. Watch the D1 write budget
 
@@ -230,10 +186,11 @@ The Workers Free plan allows **100,000 rows written per day** and 5 million read
 Exceeding either does not degrade gracefully: D1 starts returning errors, which
 means beacons fail and **you silently lose traffic** until the counter resets.
 
-This design costs roughly 1.2 rows written per pageview end to end, so the free
-tier covers something in the order of tens of thousands of pageviews a day. The
-number that actually moves is the filter cube, whose cost scales with how *varied*
-your traffic is rather than how much of it there is.
+The design target is half of every free-plan limit for a fleet of about a
+hundred sites and apps — the README's [How it stays free](README.md#how-it-stays-free)
+has the measured numbers. Rows *read* is the limit that binds, and it is spent by
+the app (a realtime panel left open all day, many dashboard loads), not by
+ingest.
 
 Check usage in the Cloudflare dashboard under your D1 database. If you are running
 close, `FILTERS=off` (step 10) is the biggest single lever.
@@ -247,9 +204,9 @@ beacons to `/xyz`. No server-side configuration is involved, so every deployment
 can use a different path and no single path-based blocklist rule matches them all.
 Change the `src` in your snippet; nothing else needs to know.
 
-The dashboard cannot guess which name you picked — the Worker answers to all of
-them — so put the new one in **Settings → Script URL** and the snippet it
-shows stays copy-pasteable.
+The app cannot guess which name you picked — the Worker answers to all of
+them — so put the new one in the app under **Settings** (the script address) and
+the snippets it shows stay copy-pasteable.
 
 Pick this before step 5 if you are using Access with path bypasses.
 
@@ -257,14 +214,12 @@ Pick this before step 5 if you are using Access with path bypasses.
 
 **Recommended, or your own reloads will be a meaningful share of a small site.**
 
-`localStorage` is per-origin, so this has to be set on the site being tracked, not
-on the dashboard. In your browser's console, on your own site:
+`localStorage` is per-origin, so this has to be set on the site being tracked. In
+your browser's console, on your own site:
 
 ```js
 localStorage.setItem('em-ignore', '1')
 ```
-
-The dashboard's **Settings** tab has a button that copies this for you.
 
 ## 9. Back up beyond Time Travel
 
@@ -276,10 +231,10 @@ Paid. You do not need to enable anything.
 
 That covers accidents. It does not cover wanting your data somewhere Cloudflare is
 not, which matters here because daily rollups are the permanent record and there
-is no export button in the dashboard:
+is no export button in the app:
 
 ```bash
-npx wrangler d1 export edgemetry --remote --output edgemetry-backup.sql
+npx wrangler d1 export nsmetry --remote --output nsmetry-backup.sql
 ```
 
 Worth doing on a schedule if the history matters to you.
@@ -290,31 +245,31 @@ Worth doing on a schedule if the history matters to you.
 
 | Variable | Default | When to change it |
 |---|---|---|
-| `PBKDF2_ITERATIONS` | `15000` | Raise to `200000` on Workers Paid. **Set it before you create the first account.** The iteration count is not stored with the hash, so changing it on a live instance invalidates every existing password. If you have already done that and cannot log in, put the old value back and your password works again. |
-| `FILTERS` | `on` | Set to `off` on an unusually diverse instance to trade the filter chips for a much smaller write budget. |
+| `FILTERS` | `on` | Set to `off` on an unusually diverse instance to trade the filters for a smaller budget. |
 | `HOURLY_RETENTION_DAYS` | `7` | How long hour-resolution data is kept. Daily rollups are permanent regardless. |
+| `UPDATE_CHECK` | `on` | `off` stops the nightly release check, the only request the instance makes to anyone. |
 
 Two more that are not `vars`:
 
-- `observability.head_sampling_rate` is `1`, meaning every request is logged. That
-  is right for a new instance you are still watching and wasteful once traffic
-  grows. Turn it down when it stops being interesting.
-- **Script URL** lives in the dashboard under **Settings**, not in
-  `wrangler.jsonc`. It is a deliberate exception: the value depends on the
-  hostname you ended up on, the filename you chose in step 7 and whether you did
-  step 5, none of which are knowable at deploy time. It is stored in D1, so a
-  redeploy does not reset it.
+- `observability.head_sampling_rate` is `1`, meaning every request is logged.
+  That is right for a new instance — and it is where sign-in codes go when no mail
+  is configured — but turn it down once traffic grows. Code lines are written on
+  every send, so a lower rate can drop one; configure mail before lowering it.
+- **The script address** lives in the app under **Settings**, not in
+  `wrangler.jsonc`, because it depends on the hostname and filename you chose
+  after deploying. It is stored in D1, so a redeploy does not reset it.
 
 ## 11. Add more sites and viewers
 
 **Optional.**
 
-One deployment serves as many sites as you like — add them under **Install &
-sites**. Each gets its own snippet, and traffic is fully isolated: the same visitor
-hashes differently per site, so cross-site correlation is impossible by
-construction. Site count costs nothing; only total traffic counts against the free
-tier.
+One deployment serves as many sites and apps as you like — add them from the
+site switcher. Each gets its own install instructions, and traffic is fully
+isolated: the same visitor hashes differently per site, so cross-site correlation
+is impossible by construction. Site count costs nothing; only total traffic
+counts against the free plan.
 
-Under **Team**, an owner can add viewers and tick which sites each one sees, which
-is how you hand a client a login to their own dashboard without exposing your other
-properties. Permissions are enforced server-side, not by hiding buttons.
+Under **Team**, the administrator invites an email and ticks which sites it sees.
+No mail is sent: they sign in with a code at your instance's address, in the web
+app or the desktop and mobile apps. Permissions are enforced server-side, not by
+hiding buttons, and apply to their agents too.

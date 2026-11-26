@@ -1,0 +1,46 @@
+{
+  "name": "nsmetry",
+  "version": "0.1.0",
+  "description": "Event analytics client for a self-hosted NsMetry instance: batched, retrying, dependency-free. Browsers, Node, Bun, Deno, React Native, Electron and Workers.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "keywords": [
+    "analytics",
+    "events",
+    "privacy",
+    "nsmetry",
+    "react-native",
+    "electron",
+    "cloudflare"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --config vitest.config.ts",
+    "sync:nsh": "cp src/core.ts ../nsh/src/core.ts",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
+  },
+  "devDependencies": {
+    "typescript": "^5",
+    "vitest": "^4.1.10"
+  }
+}

@@ -1,63 +1,47 @@
 import { type Context, Hono } from 'hono';
-import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 
-import {
-  SESSION_COOKIE,
-  SETTING_SESSION_SECRET,
-  issueSession,
-  randomHex,
-  readSession,
-  sessionCookieOptions,
-} from './auth';
-import dashboardTemplate from './dashboard.html';
-import { ensureSchema, getSetting, setSetting } from './db';
-import { FONT_FACE_CSS, FONT_FILES } from './fonts';
-import { isBreakdownDim } from './dimensions';
+import { adminEmail, clientKey, startSignIn, verifySignIn } from './auth';
+import { serveAppAsset } from './assets';
+import { SETTING_FOLD_SECRET, ensureSchema, getSetting, setSetting } from './db';
 import { FAVICON_SVG } from './favicon';
-import { corsPreflight, handleIngest } from './ingest';
-import { loginPage, setupPage } from './pages';
-import {
-  METRICS,
-  type Components,
-  type Metric,
-  loadBreakdowns,
-  loadRealtime,
-  loadSeries,
-  metricValue,
-  parseFilters,
-  resolveRange,
-  totalsFrom,
-} from './query';
-import { catchUpToday, dailyJob, hourlyJob } from './rollup';
+import { clearSiteCache, corsPreflight, handleBatchIngest, handleIngest } from './ingest';
+import { loadActiveUsers, loadEventProperties, loadEvents, loadRetention } from './app-analytics';
+// The reports themselves live in src/reports.ts (shared with the MCP tools);
+// these two are kept for routes that parse a range or filters of their own.
+import { filterSpanError, loadEventSeries, parseFilters, resolveRange } from './query';
+import { catchUpToday, scheduledRun } from './rollup';
+import { blocksFrom, blocksFromDayNumber, foldUnit } from './state';
+import { bearerToken, resolveSession, revokeSession } from './sessions';
 import { getStats } from './stats';
 import { dayOffset, isValidDay, partsFor } from './time';
 import { trackerResponse } from './tracker';
 import { checkForUpdate, readUpdateStatus } from './update';
 import { VERSION } from './version';
 import { WORLD_GEOMETRY } from './world';
+import { mcpRoutes } from './mcp';
+import { deleteGrant, listGrants, oauthRoutes } from './oauth';
 import {
-  MIN_PASSWORD_LENGTH,
-  type Role,
+  ReportError,
+  breakdownReport,
+  findSite,
+  realtimeReport,
+  summaryReport,
+  timeseriesReport,
+} from './reports';
+import {
   type UserRow,
   accessibleSites,
-  canAccessSite,
-  countOwners,
-  countUsers,
-  createFirstOwner,
   createUser,
   deleteUser,
-  getUserByEmail,
   getUserById,
   isOwner,
   isValidEmail,
   listUsers,
   normalizeEmail,
-  setPassword,
-  setRole,
   setSiteAccess,
   siteIdsFor,
   toPublicUser,
-  verifyPassword,
+  withRole,
 } from './users';
 
 /**
@@ -74,9 +58,27 @@ const RESERVED_PATHS = new Set([
   'robots.txt',
   'favicon.ico',
   'favicon.svg',
+  // OAuth and MCP for AI agents (src/oauth.ts, src/mcp.ts). Reserved so a
+  // POST /mcp or /oauth can never fall through to the tracker's ingest path.
+  'oauth',
+  'mcp',
+  '.well-known',
 ]);
 
 const DOMAIN_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
+
+/**
+ * A site does not have to be a website. Apps, CLIs, games and backends have no
+ * hostname to put in `data-domain`, so a site can also be a bare name — `noop`,
+ * `ios-app`, `my_cli` — that the HTTP API sends as its `site`. The name is only
+ * ever a lookup key: nothing treats it as a host, so there is nothing to
+ * resolve or verify.
+ */
+const NAME_PATTERN = /^[a-z0-9]([a-z0-9_-]{0,62}[a-z0-9])?$/;
+
+export function isValidSiteKey(value: string): boolean {
+  return value.length <= 253 && (DOMAIN_PATTERN.test(value) || NAME_PATTERN.test(value));
+}
 
 /**
  * The `src` the console prints in its install snippet.
@@ -99,50 +101,23 @@ function cubeEnabled(env: Env): boolean {
   return (env.FILTERS ?? 'on').toLowerCase() !== 'off';
 }
 
-function iterationsFor(env: Env): number {
-  const parsed = Number.parseInt(env.PBKDF2_ITERATIONS ?? '', 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 15_000;
-}
-
-function isSecure(url: string): boolean {
-  return new URL(url).protocol === 'https:';
-}
-
 function normalizeDomain(raw: string): string {
   return raw.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '');
 }
 
-async function setupComplete(env: Env): Promise<boolean> {
-  return (await countUsers(env.DB)) > 0;
-}
-
 /**
- * Resolve the signed-in user, or null.
+ * Resolve the bearer token to an account, or null.
  *
- * The cookie signature is verified first, then the account is re-read from the
- * database. That second step is what makes a deleted account, a changed
- * password or a revoked role take effect on the very next request instead of
- * whenever the cookie happens to expire.
+ * The account is re-read from the database on every request, and its role
+ * re-derived from ADMIN_EMAIL. That is what makes a removed account, a
+ * signed-out token or a changed ADMIN_EMAIL take effect on the very next
+ * request instead of whenever a token happens to expire.
  */
-async function loadUser(env: Env, cookie: string | undefined): Promise<UserRow | null> {
-  const secret = await getSetting(env.DB, SETTING_SESSION_SECRET);
-  if (!secret) return null;
-
-  const claims = await readSession(secret, cookie);
-  if (!claims) return null;
-
-  const user = await getUserById(env.DB, claims.uid);
-  if (!user || user.token_version !== claims.tv) return null;
-  return user;
-}
-
-async function startSession(env: Env, user: UserRow): Promise<string> {
-  let secret = await getSetting(env.DB, SETTING_SESSION_SECRET);
-  if (!secret) {
-    secret = randomHex(32);
-    await setSetting(env.DB, SETTING_SESSION_SECRET, secret);
-  }
-  return issueSession(secret, { uid: user.id, tv: user.token_version });
+async function loadUser(env: Env, authorization: string | undefined): Promise<UserRow | null> {
+  const userId = await resolveSession(env.DB, bearerToken(authorization));
+  if (userId === null) return null;
+  const user = await getUserById(env.DB, userId);
+  return user ? withRole(user, adminEmail(env)) : null;
 }
 
 function parseSiteIds(value: unknown): number[] {
@@ -150,162 +125,114 @@ function parseSiteIds(value: unknown): number[] {
   return [...new Set(value.map((v) => Number(v)).filter((n) => Number.isInteger(n) && n > 0))];
 }
 
-/* ------------------------------------------------------- browser defences -- */
-
-/**
- * The headers that go on every HTML surface this Worker serves.
- *
- * `frame-ancestors` is the load-bearing one. The console renders "Remove user"
- * and "Remove site" as ordinary buttons wired to authenticated DELETE calls, so
- * a page that could load the dashboard in a transparent frame could have an
- * owner destroy accounts while clicking on something else entirely.
- * X-Frame-Options repeats it for browsers old enough to predate the directive.
- *
- * `default-src 'self'` is affordable here only because it is already true:
- * typefaces, the country outlines and every API call come from this Worker, and
- * there is no third-party origin anywhere in the product. Enforcing that in the
- * browser turns a claim in the README into something a visitor can verify.
- *
- * `script-src` takes a per-request nonce rather than `'unsafe-inline'`, because
- * the console displays paths, referrers, UTM values and event names that anyone
- * on the internet can put into the database through the public ingest endpoint.
- * Every one of those is escaped where it is written into the page — this is a
- * second layer rather than the only one, which is exactly what it is for.
- *
- * Applied at each HTML response rather than by `app.use('*')` middleware, on
- * purpose. The tracker script and the ingest endpoint are fetched cross-origin
- * from other people's sites, where a content policy for this origin means
- * nothing and a stray header is only weight on the hottest path in the system.
- */
-function securityHeaders(scriptSrc: string): Record<string, string> {
-  return {
-    'content-security-policy': [
-      "default-src 'self'",
-      `script-src ${scriptSrc}`,
-      // The one directive that stays loose. The console builds most of its
-      // markup as strings carrying `style="..."` attributes, and no nonce can
-      // cover an attribute, so restyling remains possible under an injection.
-      // It cannot become exfiltration: every fetch directive resolves to
-      // 'self', so injected CSS has nowhere off-origin to send anything.
-      "style-src 'self' 'unsafe-inline'",
-      "object-src 'none'",
-      "base-uri 'none'",
-      "form-action 'self'",
-      "frame-ancestors 'none'",
-    ].join('; '),
-    'x-frame-options': 'DENY',
-    'x-content-type-options': 'nosniff',
-    // The console keeps the site, date range and active filters in the URL, and
-    // those describe someone's traffic. Nothing here needs a referrer sent for
-    // it, so none is sent at all.
-    'referrer-policy': 'no-referrer',
-    // A per-request nonce must not come back out of a cache attached to a page
-    // some other request will read, and these pages are private anyway.
-    'cache-control': 'no-store',
-  };
-}
-
-/** Sign-in and setup run no script at all, so none needs to be allowed. */
-const PAGE_HEADERS = securityHeaders("'none'");
-
 app.use('*', async (c, next) => {
   await ensureSchema(c.env.DB);
   await next();
 });
 
 app.onError((err, c) => {
+  // A report that cannot be answered — bad range, unreadable site — is the
+  // caller's mistake, thrown by src/reports.ts so no handler can forget it.
+  if (err instanceof ReportError) return c.json({ error: err.message }, err.status);
   console.error(JSON.stringify({ level: 'error', path: c.req.path, message: String(err) }));
   return c.json({ error: 'internal error' }, 500);
+});
+
+/* ------------------------------------------------------------------ CORS -- */
+
+/**
+ * Every /api/* answer is readable from any origin, per docs/api.md.
+ *
+ * That is safe only because nothing here is ambient: there are no cookies, so
+ * a page on another origin can do nothing a caller could not already do with
+ * the bearer token it holds. And it is needed — the NSH web build may be served
+ * from somewhere other than the instance, and the desktop and mobile shells
+ * have no origin of their own to share with it.
+ *
+ * Registered before every /api route, ingest included, so a preflight never
+ * reaches a handler or the session check.
+ */
+const API_CORS: Record<string, string> = {
+  'access-control-allow-origin': '*',
+  'access-control-allow-methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+  'access-control-allow-headers': 'authorization, content-type',
+  'access-control-max-age': '86400',
+};
+
+app.use('/api/*', async (c, next) => {
+  if (c.req.method === 'OPTIONS') return new Response(null, { status: 204, headers: API_CORS });
+  await next();
+  try {
+    for (const [name, value] of Object.entries(API_CORS)) c.res.headers.set(name, value);
+  } catch {
+    // A response built from a fetch() has immutable headers; copy it first.
+    const copy = new Response(c.res.body, c.res);
+    for (const [name, value] of Object.entries(API_CORS)) copy.headers.set(name, value);
+    c.res = copy;
+  }
 });
 
 /* ---------------------------------------------------------------- ingest -- */
 
 app.options('/api/event', () => corsPreflight());
 app.post('/api/event', (c) => handleIngest(c.req.raw, c.env));
+// An app flushes its queue here: up to fifty events, one request. Requests
+// are the free plan's binding limit for a fleet of apps, so this is the
+// endpoint the SDKs use (see docs/api.md, "Ingest").
+app.options('/api/events/batch', () => corsPreflight());
+app.post('/api/events/batch', (c) => handleBatchIngest(c.req.raw, c.env));
 
-/* -------------------------------------------------------------- sessions -- */
+/* -------------------------------------------------------------- sign-in -- */
+
+/**
+ * The /api routes that answer without a session: ingest, which other people's
+ * visitors and apps call; sign-in itself; and the immutable world map.
+ * Exact paths, or prefixes that carry their trailing slash, so the list cannot
+ * widen to any other route by accident.
+ */
+const PUBLIC_API_PATHS = new Set(['/api/event', '/api/events/batch', '/api/world.json']);
+const PUBLIC_API_PREFIXES = ['/api/auth/'];
 
 app.use('/api/*', async (c, next) => {
-  // The two /api routes that must answer a signed-out request: ingest, which
-  // is called by other people's visitors, and the typefaces, which the login
-  // and setup screens ask for before anyone has a session — gate those and the
-  // first thing a new deployment shows is a page in fallback fonts. The prefix
-  // carries its trailing slash so it cannot widen to any other /api route.
-  if (c.req.path === '/api/event' || c.req.path.startsWith('/api/fonts/')) return next();
+  const path = c.req.path;
+  if (PUBLIC_API_PATHS.has(path) || PUBLIC_API_PREFIXES.some((p) => path.startsWith(p))) return next();
 
-  const user = await loadUser(c.env, getCookie(c, SESSION_COOKIE));
+  const user = await loadUser(c.env, c.req.header('authorization'));
   if (!user) return c.json({ error: 'unauthorized' }, 401);
 
   c.set('user', user);
   return next();
 });
 
-app.get('/setup', async (c) => {
-  if (await setupComplete(c.env)) return c.redirect('/login', 302);
-  return c.html(setupPage(), 200, PAGE_HEADERS);
+async function jsonBody(c: AppContext): Promise<Record<string, unknown>> {
+  const body: unknown = await c.req.json().catch(() => null);
+  return body !== null && typeof body === 'object' && !Array.isArray(body)
+    ? (body as Record<string, unknown>)
+    : {};
+}
+
+app.post('/api/auth/start', async (c) => {
+  const body = await jsonBody(c);
+  const result = await startSignIn(c.env, body.email, clientKey(c.req));
+  return c.json(result.body, result.status, NO_STORE);
 });
 
-app.post('/setup', async (c) => {
-  if (await setupComplete(c.env)) return c.redirect('/login', 302);
-
-  const form = await c.req.parseBody();
-  const email = normalizeEmail(String(form.email ?? ''));
-  const password = String(form.password ?? '');
-  const confirm = String(form.confirm ?? '');
-  const domain = normalizeDomain(String(form.domain ?? ''));
-
-  if (!isValidEmail(email)) return c.html(setupPage('Enter a valid email address.'), 400, PAGE_HEADERS);
-  if (password.length < MIN_PASSWORD_LENGTH) {
-    return c.html(
-      setupPage(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`),
-      400,
-      PAGE_HEADERS,
-    );
-  }
-  if (password !== confirm) return c.html(setupPage('Passwords do not match.'), 400, PAGE_HEADERS);
-  if (!DOMAIN_PATTERN.test(domain)) {
-    return c.html(setupPage('Enter a bare domain, for example example.com'), 400, PAGE_HEADERS);
-  }
-
-  // Atomic: whoever wins this insert owns the instance. A second person racing a
-  // fresh deployment is sent to the login screen rather than taking it over.
-  const owner = await createFirstOwner(c.env.DB, email, password, iterationsFor(c.env));
-  if (!owner) return c.redirect('/login', 302);
-
-  await c.env.DB.prepare('INSERT OR IGNORE INTO sites (domain, created_at) VALUES (?, ?)')
-    .bind(domain, Math.floor(Date.now() / 1000))
-    .run();
-
-  setCookie(c, SESSION_COOKIE, await startSession(c.env, owner), sessionCookieOptions(isSecure(c.req.url)));
-  return c.redirect('/', 302);
+app.post('/api/auth/verify', async (c) => {
+  const body = await jsonBody(c);
+  const result = await verifySignIn(
+    c.env,
+    body.email,
+    body.code,
+    c.req.header('user-agent') ?? '',
+    clientKey(c.req),
+  );
+  return c.json(result.body, result.status, NO_STORE);
 });
 
-app.get('/login', async (c) => {
-  if (!(await setupComplete(c.env))) return c.redirect('/setup', 302);
-  return c.html(loginPage(), 200, PAGE_HEADERS);
-});
-
-app.post('/login', async (c) => {
-  if (!(await setupComplete(c.env))) return c.redirect('/setup', 302);
-
-  const form = await c.req.parseBody();
-  const email = normalizeEmail(String(form.email ?? ''));
-  const password = String(form.password ?? '');
-
-  const user = await getUserByEmail(c.env.DB, email);
-  // One message for both failure modes — this must not reveal which accounts exist.
-  const ok = user !== null && (await verifyPassword(user, password, iterationsFor(c.env)));
-  if (!user || !ok) {
-    return c.html(loginPage('Incorrect email or password.'), 401, PAGE_HEADERS);
-  }
-
-  setCookie(c, SESSION_COOKIE, await startSession(c.env, user), sessionCookieOptions(isSecure(c.req.url)));
-  return c.redirect('/', 302);
-});
-
-app.post('/logout', (c) => {
-  deleteCookie(c, SESSION_COOKIE, { path: '/' });
-  return c.redirect('/login', 302);
+/** Always `ok`: signing out a token that is already gone has the same outcome. */
+app.post('/api/auth/logout', async (c) => {
+  await revokeSession(c.env.DB, bearerToken(c.req.header('authorization')));
+  return c.json({ ok: true });
 });
 
 /* ----------------------------------------------------------- own account -- */
@@ -314,42 +241,16 @@ app.get('/api/me', async (c) => {
   const user = c.get('user');
   return c.json({
     user: toPublicUser(user, await siteIdsFor(c.env.DB, user.id)),
-    // Empty unless an owner set it, in which case the console shows this
-    // instead of guessing its own origin. See PUT /api/settings/tracker-url.
+    // Empty unless the administrator set it, in which case the app shows this
+    // instead of guessing the instance's origin. See PUT /api/settings/tracker-url.
     trackerUrl: (await getSetting(c.env.DB, SETTING_TRACKER_URL)) ?? '',
-    // What this build calls itself, so the console can say so without a second
+    // What this build calls itself, so the app can say so without a second
     // round trip. Everyone sees it; it is the answer to "which one am I on".
     version: VERSION,
-    // Owners only. A viewer cannot deploy anything, so telling them the
+    // Administrator only. A viewer cannot deploy anything, so telling them the
     // instance is behind is a nag pointed at the wrong person.
     update: isOwner(user) ? await readUpdateStatus(c.env.DB) : null,
   });
-});
-
-app.post('/api/me/password', async (c) => {
-  const user = c.get('user');
-  const body = await c.req
-    .json<{ current?: unknown; next?: unknown }>()
-    .catch(() => ({}) as Record<string, unknown>);
-  const current = String(body.current ?? '');
-  const next = String(body.next ?? '');
-
-  if (!(await verifyPassword(user, current, iterationsFor(c.env)))) {
-    return c.json({ error: 'current password is incorrect' }, 400);
-  }
-  if (next.length < MIN_PASSWORD_LENGTH) {
-    return c.json({ error: `password must be at least ${MIN_PASSWORD_LENGTH} characters` }, 400);
-  }
-
-  await setPassword(c.env.DB, user.id, next, iterationsFor(c.env));
-
-  // That change invalidated every session for this user, including the tab they
-  // are sitting in, so hand them a fresh cookie instead of a surprise logout.
-  const updated = await getUserById(c.env.DB, user.id);
-  if (updated) {
-    setCookie(c, SESSION_COOKIE, await startSession(c.env, updated), sessionCookieOptions(isSecure(c.req.url)));
-  }
-  return c.json({ ok: true });
 });
 
 /* ----------------------------------------------------- instance settings -- */
@@ -379,10 +280,12 @@ export function normalizeTrackerUrl(raw: string): string | null {
   return url.href;
 }
 
-app.put('/api/settings/tracker-url', async (c) => {
-  if (!isOwner(c.get('user'))) return c.json({ error: 'owner access required' }, 403);
+const OWNER_ONLY = { error: 'only the administrator can do that' } as const;
 
-  const body = await c.req.json<{ url?: unknown }>().catch(() => ({}) as Record<string, unknown>);
+app.put('/api/settings/tracker-url', async (c) => {
+  if (!isOwner(c.get('user'))) return c.json(OWNER_ONLY, 403);
+
+  const body = await jsonBody(c);
   const trackerUrl = normalizeTrackerUrl(String(body.url ?? ''));
   if (trackerUrl === null) {
     return c.json({ error: 'enter a full URL ending in .js, or leave it empty' }, 400);
@@ -397,116 +300,146 @@ app.put('/api/settings/tracker-url', async (c) => {
 app.get('/api/sites', async (c) => c.json({ sites: await accessibleSites(c.env.DB, c.get('user')) }));
 
 app.post('/api/sites', async (c) => {
-  if (!isOwner(c.get('user'))) return c.json({ error: 'owner access required' }, 403);
+  if (!isOwner(c.get('user'))) return c.json(OWNER_ONLY, 403);
 
-  const body = await c.req.json<{ domain?: unknown }>().catch(() => ({ domain: undefined }));
+  const body = await jsonBody(c);
   const domain = normalizeDomain(String(body.domain ?? ''));
-  if (!DOMAIN_PATTERN.test(domain)) return c.json({ error: 'invalid domain' }, 400);
+  if (!isValidSiteKey(domain)) {
+    return c.json({ error: 'use a domain like example.com or a name like my-app' }, 400);
+  }
 
-  await c.env.DB.prepare('INSERT OR IGNORE INTO sites (domain, created_at) VALUES (?, ?)')
+  // Adding a site that already exists answers with that site: the caller
+  // wanted it to exist, and it does.
+  // The id is chosen explicitly, above both every live site and the highest id
+  // ever deleted (the site_id_high setting). sites.id is a plain INTEGER
+  // PRIMARY KEY, so SQLite would otherwise hand a deleted site's id to the next
+  // one — and that new site would inherit the old site's rollups, which are
+  // kept on deletion, showing a viewer history they were never granted.
+  await c.env.DB.prepare(
+    `INSERT OR IGNORE INTO sites (id, domain, created_at)
+     SELECT MAX(
+              COALESCE((SELECT MAX(id) FROM sites), 0),
+              COALESCE((SELECT CAST(value AS INTEGER) FROM settings WHERE key = 'site_id_high'), 0)
+            ) + 1, ?, ?`,
+  )
     .bind(domain, Math.floor(Date.now() / 1000))
     .run();
-  return c.json({ sites: await accessibleSites(c.env.DB, c.get('user')) });
+  const site = await c.env.DB.prepare('SELECT id, domain, created_at FROM sites WHERE domain = ?')
+    .bind(domain)
+    .first<SiteRow>();
+  clearSiteCache();
+  return c.json({ site });
 });
 
 app.delete('/api/sites/:id', async (c) => {
-  if (!isOwner(c.get('user'))) return c.json({ error: 'owner access required' }, 403);
+  if (!isOwner(c.get('user'))) return c.json(OWNER_ONLY, 403);
 
   const id = Number.parseInt(c.req.param('id'), 10);
   if (!Number.isInteger(id)) return c.json({ error: 'invalid id' }, 400);
 
   // Rollups are left in place deliberately — deleting a site should not silently
-  // burn a large slice of the daily row-write budget.
+  // burn a large slice of the daily row-write budget. Its id is recorded as the
+  // high-water mark instead, so no later site is ever given it (see POST above).
   await c.env.DB.batch([
     c.env.DB.prepare('DELETE FROM site_access WHERE site_id = ?').bind(id),
+    c.env.DB.prepare(
+      `INSERT INTO settings (key, value) SELECT 'site_id_high', CAST(id AS TEXT) FROM sites WHERE id = ?
+       ON CONFLICT(key) DO UPDATE SET value = CAST(MAX(CAST(value AS INTEGER), CAST(excluded.value AS INTEGER)) AS TEXT)`,
+    ).bind(id),
     c.env.DB.prepare('DELETE FROM sites WHERE id = ?').bind(id),
+    // Every isolate's ingest cache rereads this within a minute (src/ingest.ts).
+    c.env.DB.prepare(
+      `INSERT INTO settings (key, value) VALUES ('sites_gen', '1')
+       ON CONFLICT(key) DO UPDATE SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT)`,
+    ),
   ]);
-  return c.json({ sites: await accessibleSites(c.env.DB, c.get('user')) });
+  clearSiteCache();
+  return c.json({ ok: true });
 });
 
-/* ----------------------------------------------------------------- users -- */
+/* ---------------------------------------------------------------- people -- */
+
+/** The account named by `:id`, with its role derived, or null. */
+async function targetUser(c: AppContext): Promise<UserRow | null> {
+  const id = Number.parseInt(c.req.param('id') ?? '', 10);
+  const row = Number.isInteger(id) ? await getUserById(c.env.DB, id) : null;
+  return row ? withRole(row, adminEmail(c.env)) : null;
+}
+
+async function publicUser(db: D1Database, user: UserRow) {
+  return toPublicUser(user, await siteIdsFor(db, user.id));
+}
 
 app.get('/api/users', async (c) => {
-  if (!isOwner(c.get('user'))) return c.json({ error: 'owner access required' }, 403);
-  return c.json({ users: await listUsers(c.env.DB) });
+  if (!isOwner(c.get('user'))) return c.json(OWNER_ONLY, 403);
+  return c.json({ users: await listUsers(c.env.DB, adminEmail(c.env)) });
 });
 
+/**
+ * Invite a viewer. No mail goes out here: an invitation is only permission to
+ * sign in, and the invitee asks for their own code when they open the app.
+ * That keeps this endpoint from being a way to send mail at all.
+ */
 app.post('/api/users', async (c) => {
-  if (!isOwner(c.get('user'))) return c.json({ error: 'owner access required' }, 403);
+  if (!isOwner(c.get('user'))) return c.json(OWNER_ONLY, 403);
 
-  const body = await c.req
-    .json<{ email?: unknown; password?: unknown; role?: unknown; siteIds?: unknown }>()
-    .catch(() => ({}) as Record<string, unknown>);
-
+  const body = await jsonBody(c);
   const email = normalizeEmail(String(body.email ?? ''));
-  const password = String(body.password ?? '');
-  const role: Role = body.role === 'owner' ? 'owner' : 'viewer';
-
-  if (!isValidEmail(email)) return c.json({ error: 'invalid email address' }, 400);
-  if (password.length < MIN_PASSWORD_LENGTH) {
-    return c.json({ error: `password must be at least ${MIN_PASSWORD_LENGTH} characters` }, 400);
+  if (!isValidEmail(email)) return c.json({ error: 'enter a valid email address' }, 400);
+  if (email === adminEmail(c.env)) {
+    return c.json({ error: 'that is the administrator, who can already see everything' }, 400);
   }
 
-  const created = await createUser(
-    c.env.DB,
-    { email, password, role, siteIds: parseSiteIds(body.siteIds) },
-    iterationsFor(c.env),
-  );
-  if (!created) return c.json({ error: 'that email address is already in use' }, 409);
+  const created = await createUser(c.env.DB, { email, siteIds: parseSiteIds(body.siteIds) });
+  if (!created) return c.json({ error: 'that email has already been invited' }, 409);
 
-  return c.json({ users: await listUsers(c.env.DB) });
+  return c.json({ user: await publicUser(c.env.DB, withRole(created, adminEmail(c.env))) });
 });
 
 app.patch('/api/users/:id', async (c) => {
-  const actor = c.get('user');
-  if (!isOwner(actor)) return c.json({ error: 'owner access required' }, 403);
+  if (!isOwner(c.get('user'))) return c.json(OWNER_ONLY, 403);
 
-  const id = Number.parseInt(c.req.param('id'), 10);
-  const target = Number.isInteger(id) ? await getUserById(c.env.DB, id) : null;
+  const target = await targetUser(c);
   if (!target) return c.json({ error: 'no such user' }, 404);
-
-  const body = await c.req
-    .json<{ role?: unknown; siteIds?: unknown; password?: unknown }>()
-    .catch(() => ({}) as Record<string, unknown>);
-
-  if (body.role === 'owner' || body.role === 'viewer') {
-    // Changing your own role is how people lock themselves out by accident.
-    if (target.id === actor.id) return c.json({ error: 'you cannot change your own role' }, 400);
-    if (target.role === 'owner' && body.role === 'viewer' && (await countOwners(c.env.DB)) === 1) {
-      return c.json({ error: 'the last owner cannot be demoted' }, 400);
-    }
-    await setRole(c.env.DB, target.id, body.role);
+  if (isOwner(target)) {
+    return c.json({ error: 'the administrator sees every site; there is nothing to grant' }, 400);
   }
 
-  if (body.siteIds !== undefined) {
-    await setSiteAccess(c.env.DB, target.id, parseSiteIds(body.siteIds));
-  }
+  const body = await jsonBody(c);
+  if (!Array.isArray(body.siteIds)) return c.json({ error: 'siteIds must be an array of site ids' }, 400);
 
-  if (typeof body.password === 'string' && body.password !== '') {
-    if (body.password.length < MIN_PASSWORD_LENGTH) {
-      return c.json({ error: `password must be at least ${MIN_PASSWORD_LENGTH} characters` }, 400);
-    }
-    await setPassword(c.env.DB, target.id, body.password, iterationsFor(c.env));
-  }
-
-  return c.json({ users: await listUsers(c.env.DB) });
+  await setSiteAccess(c.env.DB, target.id, parseSiteIds(body.siteIds));
+  return c.json({ user: await publicUser(c.env.DB, target) });
 });
 
+/** Removing someone also signs them out everywhere and disconnects their agents. */
 app.delete('/api/users/:id', async (c) => {
-  const actor = c.get('user');
-  if (!isOwner(actor)) return c.json({ error: 'owner access required' }, 403);
+  if (!isOwner(c.get('user'))) return c.json(OWNER_ONLY, 403);
 
-  const id = Number.parseInt(c.req.param('id'), 10);
-  const target = Number.isInteger(id) ? await getUserById(c.env.DB, id) : null;
+  const target = await targetUser(c);
   if (!target) return c.json({ error: 'no such user' }, 404);
-
-  if (target.id === actor.id) return c.json({ error: 'you cannot remove your own account' }, 400);
-  if (target.role === 'owner' && (await countOwners(c.env.DB)) === 1) {
-    return c.json({ error: 'the last owner cannot be removed' }, 400);
+  // Admin rights come from ADMIN_EMAIL; deleting the row would only be undone
+  // by their next sign-in, and would sign them out meanwhile.
+  if (isOwner(target)) {
+    return c.json({ error: 'the administrator is set by ADMIN_EMAIL and cannot be removed here' }, 400);
   }
 
-  await deleteUser(c.env.DB, target.id);
-  return c.json({ users: await listUsers(c.env.DB) });
+  await deleteUser(c.env.DB, target);
+  return c.json({ ok: true });
+});
+
+/* ------------------------------------------------------ connected agents -- */
+
+// Each person manages only their own agents: a grant reads with its user's
+// access, so it is theirs to see and to disconnect. The administrator ends
+// someone else's agents by removing that person, which deletes their grants.
+app.get('/api/oauth/grants', async (c) =>
+  c.json({ grants: await listGrants(c.env.DB, c.get('user').id) }, 200, NO_STORE),
+);
+
+app.delete('/api/oauth/grants/:id', async (c) => {
+  const removed = await deleteGrant(c.env.DB, c.get('user').id, c.req.param('id'));
+  return removed ? c.json({ ok: true }) : c.json({ error: 'no such connected agent' }, 404);
 });
 
 /* ----------------------------------------------------------------- stats -- */
@@ -514,37 +447,34 @@ app.delete('/api/users/:id', async (c) => {
 type SiteRow = Awaited<ReturnType<typeof accessibleSites>>[number];
 
 /**
- * The site the request is asking about, or a response explaining why not.
+ * The site the request is asking about. Shared with the MCP tools through
+ * reports.ts findSite, which checks the grant table rather than the list we
+ * happen to have rendered, so a crafted site id cannot read another tenant's
+ * numbers. A refusal is thrown as a ReportError and answered by onError; the
+ * Response in the return type is kept for callers written against the older
+ * shape.
  *
- * Authorisation goes through the grant table rather than the list we happen to
- * have rendered, so a crafted site id cannot read another tenant's numbers.
+ * Without a numeric `site` the first readable site is the answer — the app
+ * opens on "whatever you have".
  */
 async function resolveSite(c: AppContext): Promise<SiteRow | Response> {
-  const user = c.get('user');
-  const sites = await accessibleSites(c.env.DB, user);
-  if (sites.length === 0) return c.json({ error: 'no sites available' }, 404);
-
   const requested = Number.parseInt(c.req.query('site') ?? '', 10);
-  if (!Number.isInteger(requested)) return sites[0]!;
-  if (!(await canAccessSite(c.env.DB, user, requested))) {
-    return c.json({ error: 'forbidden' }, 403);
+  const user = c.get('user');
+  // The owner can read every site, so a numeric id needs only that one row.
+  // findSite lists every site the caller can see, which for the owner of a
+  // full fleet is a hundred rows read on every report — and the realtime
+  // panel asks every thirty seconds.
+  if (Number.isInteger(requested) && isOwner(user)) {
+    const site = await c.env.DB.prepare('SELECT id, domain, created_at FROM sites WHERE id = ?')
+      .bind(requested)
+      .first<SiteRow>();
+    if (!site) throw new ReportError(404, 'no such site');
+    return site;
   }
-
-  // An owner passes the access check for any id, including one that does not
-  // exist — so the id still has to be resolved. Answering about a different
-  // site than the one asked for would be worse than an error.
-  const site = sites.find((s) => s.id === requested);
-  return site ?? c.json({ error: 'no such site' }, 404);
+  return findSite(c.env.DB, user, Number.isInteger(requested) ? requested : undefined, true);
 }
 
 const NO_STORE = { 'cache-control': 'no-store' } as const;
-
-function summarize(components: Components): Record<Metric, number> {
-  return Object.fromEntries(METRICS.map((m) => [m, metricValue(m, components)])) as Record<
-    Metric,
-    number
-  >;
-}
 
 app.get('/api/stats', async (c) => {
   const site = await resolveSite(c);
@@ -566,66 +496,34 @@ app.get('/api/stats', async (c) => {
 });
 
 /**
- * Everything the console's header and hero need, in one request.
- *
- * The per-bucket series is returned for all five metrics rather than just the
- * selected one, because the metric rail draws a sparkline for each and the
- * numbers are already in hand — splitting them across five requests would cost
- * five times the database work to show the same screen.
+ * The ReportQuery the HTTP API's query string describes. The reports
+ * themselves live in src/reports.ts, shared with the MCP tools, so the app and
+ * an agent can never disagree about a number.
+ */
+function reportQuery(c: AppContext) {
+  return {
+    range: c.req.query('range'),
+    from: c.req.query('from'),
+    to: c.req.query('to'),
+    f: c.req.query('f'),
+    compare: c.req.query('cmp') === '1',
+  };
+}
+
+/**
+ * Everything the console's header and hero need, in one request: totals and
+ * the per-bucket series for all five metrics (see summaryReport for why all
+ * five).
  */
 app.get('/api/summary', async (c) => {
   const site = await resolveSite(c);
   if (site instanceof Response) return site;
 
-  const now = new Date();
-  const range = resolveRange(
-    c.req.query('range'),
-    c.req.query('from'),
-    c.req.query('to'),
-    now,
-  );
-  if (!range) return c.json({ error: 'invalid range' }, 400);
-
-  const filters = parseFilters(c.req.query('f'));
-  const compare = c.req.query('cmp') === '1';
-
   const started = Date.now();
-  await catchUpToday(c.env.DB, now);
-  const db = c.env.DB;
-
-  const [series, previousSeries] = await Promise.all([
-    loadSeries(db, site.id, range, range.from, range.to, filters, now),
-    compare
-      ? loadSeries(db, site.id, range, range.prevFrom, range.prevTo, filters, now)
-      : Promise.resolve(null),
-  ]);
-
-  const totals = totalsFrom(series);
-  const previousTotals = previousSeries ? totalsFrom(previousSeries) : null;
-
-  const per = (buckets: typeof series | null): Record<Metric, number[]> | null =>
-    buckets &&
-    (Object.fromEntries(
-      METRICS.map((m) => [m, buckets.map((b) => metricValue(m, b))]),
-    ) as Record<Metric, number[]>);
-
+  const report = await summaryReport(c.env.DB, site, reportQuery(c), new Date());
   return c.json(
     {
-      site,
-      range,
-      filters,
-      totals: summarize(totals),
-      previous: previousTotals ? summarize(previousTotals) : null,
-      series: {
-        labels: series.map((b) => b.label),
-        cur: per(series),
-        // Trimmed to the current window's length so the two line up point for
-        // point; a partial "today" must not be compared against a whole day.
-        prev: previousSeries ? per(previousSeries.slice(0, series.length)) : null,
-      },
-      // Under a path filter, visits are the ones that *started* on that path —
-      // the cube cannot know which other visits passed through it later.
-      visitsBasis: filters.some((f) => f.dim === 'path') ? 'entrances' : 'exact',
+      ...report,
       // Shown in the header. Being able to see what a page cost is the whole
       // reason this design keeps a query time in the chrome.
       meta: { ms: Date.now() - started, colo: (c.req.raw.cf?.colo as string | undefined) ?? '' },
@@ -639,38 +537,8 @@ app.get('/api/summary', async (c) => {
 app.get('/api/timeseries', async (c) => {
   const site = await resolveSite(c);
   if (site instanceof Response) return site;
-
-  const now = new Date();
-  const range = resolveRange(c.req.query('range'), c.req.query('from'), c.req.query('to'), now);
-  if (!range) return c.json({ error: 'invalid range' }, 400);
-
-  const requested = c.req.query('metric') ?? 'visitors';
-  if (!(METRICS as readonly string[]).includes(requested)) {
-    return c.json({ error: 'unknown metric' }, 400);
-  }
-  const metric = requested as Metric;
-  const filters = parseFilters(c.req.query('f'));
-  const compare = c.req.query('cmp') === '1';
-
-  await catchUpToday(c.env.DB, now);
-
-  const series = await loadSeries(c.env.DB, site.id, range, range.from, range.to, filters, now);
-  const previous = compare
-    ? await loadSeries(c.env.DB, site.id, range, range.prevFrom, range.prevTo, filters, now)
-    : [];
-
-  return c.json(
-    {
-      granularity: range.granularity,
-      points: series.map((bucket, i) => ({
-        label: bucket.label,
-        cur: metricValue(metric, bucket),
-        prev: previous[i] ? metricValue(metric, previous[i]!) : null,
-      })),
-    },
-    200,
-    NO_STORE,
-  );
+  const query = { ...reportQuery(c), metric: c.req.query('metric') };
+  return c.json(await timeseriesReport(c.env.DB, site, query, new Date()), 200, NO_STORE);
 });
 
 /**
@@ -681,32 +549,90 @@ app.get('/api/breakdown', async (c) => {
   const site = await resolveSite(c);
   if (site instanceof Response) return site;
 
-  const now = new Date();
-  const range = resolveRange(c.req.query('range'), c.req.query('from'), c.req.query('to'), now);
-  if (!range) return c.json({ error: 'invalid range' }, 400);
-
-  const dims = (c.req.query('dim') ?? 'path').split(',').map((d) => d.trim()).filter(isBreakdownDim);
-  if (dims.length === 0) return c.json({ error: 'unknown dimension' }, 400);
-
   const parsed = Number.parseInt(c.req.query('limit') ?? '', 10);
-  const limit = Number.isInteger(parsed) ? Math.min(Math.max(parsed, 1), 50) : 10;
+  const query = {
+    ...reportQuery(c),
+    dims: (c.req.query('dim') ?? 'path').split(','),
+    limit: Number.isInteger(parsed) ? parsed : undefined,
+  };
+  return c.json(await breakdownReport(c.env.DB, site, query, new Date()), 200, NO_STORE);
+});
+
+/* ---- analytics-track routes: app analytics endpoints are mounted here ---- */
+
+/**
+ * App analytics (docs/api.md, "App analytics"). Same site resolution and
+ * access check as every other report; the loaders live in
+ * src/app-analytics.ts, shared with the MCP tools.
+ */
+function appRange(c: AppContext, now: Date): { from: string; to: string } | null {
+  return resolveRange(c.req.query('range'), c.req.query('from'), c.req.query('to'), now);
+}
+
+app.get('/api/active-users', async (c) => {
+  const site = await resolveSite(c);
+  if (site instanceof Response) return site;
+  const now = new Date();
+  const range = appRange(c, now);
+  if (!range) return c.json({ error: 'invalid range' }, 400);
+  return c.json(await loadActiveUsers(c.env.DB, site.id, range, now), 200, NO_STORE);
+});
+
+app.get('/api/retention', async (c) => {
+  const site = await resolveSite(c);
+  if (site instanceof Response) return site;
+  const cohort = c.req.query('cohort') ?? 'day';
+  if (cohort !== 'day' && cohort !== 'week') return c.json({ error: 'cohort must be day or week' }, 400);
+  const periods = Number.parseInt(c.req.query('periods') ?? '8', 10);
+  return c.json(await loadRetention(c.env.DB, site.id, cohort, periods, new Date()), 200, NO_STORE);
+});
+
+app.get('/api/events', async (c) => {
+  const site = await resolveSite(c);
+  if (site instanceof Response) return site;
+  const now = new Date();
+  const range = appRange(c, now);
+  if (!range) return c.json({ error: 'invalid range' }, 400);
   const filters = parseFilters(c.req.query('f'));
+  const spanError = filterSpanError(range.from, range.to, filters);
+  if (spanError) return c.json({ error: spanError }, 400);
+  return c.json(await loadEvents(c.env.DB, site.id, range, filters, now), 200, NO_STORE);
+});
 
-  await catchUpToday(c.env.DB, now);
-
-  const breakdowns = await loadBreakdowns(c.env.DB, site.id, range, filters, dims, limit, now);
-
+app.get('/api/event-properties', async (c) => {
+  const site = await resolveSite(c);
+  if (site instanceof Response) return site;
+  const now = new Date();
+  const range = appRange(c, now);
+  if (!range) return c.json({ error: 'invalid range' }, 400);
+  const event = c.req.query('event');
+  if (!event) return c.json({ error: 'event is required' }, 400);
+  const limit = Number.parseInt(c.req.query('limit') ?? '10', 10);
   return c.json(
-    { breakdowns, rows: dims.length === 1 ? breakdowns[dims[0]!] : undefined },
+    await loadEventProperties(c.env.DB, site.id, range, event, c.req.query('key') || undefined, limit, now),
     200,
     NO_STORE,
   );
 });
 
+app.get('/api/event-series', async (c) => {
+  const site = await resolveSite(c);
+  if (site instanceof Response) return site;
+  const now = new Date();
+  const range = resolveRange(c.req.query('range'), c.req.query('from'), c.req.query('to'), now);
+  if (!range) return c.json({ error: 'invalid range' }, 400);
+  const event = c.req.query('event');
+  if (!event) return c.json({ error: 'event is required' }, 400);
+  const filters = parseFilters(c.req.query('f'));
+  const spanError = filterSpanError(range.from, range.to, filters);
+  if (spanError) return c.json({ error: spanError }, 400);
+  return c.json(await loadEventSeries(c.env.DB, site.id, range, event, filters, now), 200, NO_STORE);
+});
+
 app.get('/api/realtime', async (c) => {
   const site = await resolveSite(c);
   if (site instanceof Response) return site;
-  return c.json(await loadRealtime(c.env.DB, site.id, new Date()), 200, NO_STORE);
+  return c.json(await realtimeReport(c.env.DB, site, new Date(), c.req.query('since')), 200, NO_STORE);
 });
 
 /**
@@ -721,45 +647,15 @@ app.get('/api/world.json', (c) =>
   c.json(WORLD_GEOMETRY, 200, { 'cache-control': 'public, max-age=31536000, immutable' }),
 );
 
-/** The console's typefaces, for the same reason. See scripts/build-fonts.mjs. */
-app.get('/api/fonts/:file', (c) => {
-  const file = c.req.param('file');
-  // Own-property check, because a bare lookup walks the prototype chain and
-  // would hand `/api/fonts/constructor` a function for atob() to choke on.
-  if (!Object.hasOwn(FONT_FILES, file)) return c.notFound();
-  const encoded = FONT_FILES[file]!;
+/* --------------------------------------------------- OAuth + MCP (agents) -- */
 
-  const binary = atob(encoded);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-
-  return c.body(bytes, 200, {
-    'content-type': 'font/woff2',
-    'cache-control': 'public, max-age=31536000, immutable',
-  });
-});
-
-/* ------------------------------------------------------------- dashboard -- */
-
-// The @font-face rules are generated alongside the font files, so the two
-// cannot drift; splicing them in once at module scope leaves only the script
-// nonce to fill in per request. That last substitution costs around eight
-// microseconds on the ~95KB page, which is nothing next to the database work
-// the same request is already doing.
-const dashboardTemplateWithFonts = dashboardTemplate.replace('/*fonts*/', FONT_FACE_CSS);
-
-app.get('/', async (c) => {
-  if (!(await setupComplete(c.env))) return c.redirect('/setup', 302);
-  const user = await loadUser(c.env, getCookie(c, SESSION_COOKIE));
-  if (!user) return c.redirect('/login', 302);
-
-  const nonce = randomHex(16);
-  return c.html(
-    dashboardTemplateWithFonts.replace('{{nonce}}', nonce),
-    200,
-    securityHeaders(`'nonce-${nonce}'`),
-  );
-});
+// Mounted before the tracker's catch-all `/:name` routes below: Hono answers
+// with the first route that matches, and `POST /mcp` must reach the MCP server,
+// not the ingest endpoint (RESERVED_PATHS is the second line of defence).
+// Outside /api on purpose — their paths are fixed by the OAuth and MCP specs,
+// and they carry their own CORS and their own token checks.
+app.route('/', oauthRoutes);
+app.route('/', mcpRoutes);
 
 app.get('/health', (c) => c.json({ ok: true }));
 
@@ -799,37 +695,66 @@ app.options('/:name{[A-Za-z0-9._-]+}', (c) => {
   return corsPreflight();
 });
 
+/**
+ * One fold unit, sent by the scheduled run through the SELF service binding
+ * so that every unit gets a request's own CPU budget (src/rollup.ts). Not part
+ * of the API: it answers only a caller holding the install's fold secret,
+ * which lives in `settings` and never leaves the Worker.
+ */
+app.post('/internal/fold', async (c) => {
+  const secret = await foldSecret(c.env.DB);
+  if (!secret || c.req.header('x-fold-secret') !== secret) return c.json({ error: 'not found' }, 404);
+  const body = (await c.req.json().catch(() => null)) as { sites?: unknown } | null;
+  const sites = Array.isArray(body?.sites) ? body.sites.map(Number).filter((n) => Number.isInteger(n) && n > 0).slice(0, 64) : [];
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const from = blocksFromDayNumber(await blocksFrom(c.env.DB));
+  const results = await foldUnit(c.env.DB, sites, nowSeconds, from);
+  return c.json({ results }, 200, NO_STORE);
+});
+
 app.post('/:name{[A-Za-z0-9._-]+}', (c) => {
   if (RESERVED_PATHS.has(c.req.param('name'))) return c.notFound();
   return handleIngest(c.req.raw, c.env);
 });
 
 export default {
-  fetch: app.fetch,
+  /**
+   * The front door. Static assets (the NSH web build, see wrangler.jsonc
+   * "assets") are matched by Cloudflare before the Worker runs, except for the
+   * paths listed in `run_worker_first` — and `/*.js` has to be one of them,
+   * because the tracker answers `GET /<anything>.js`. So the app's own
+   * JavaScript arrives here too, and goes back to the asset store before Hono
+   * ever sees it; everything else is the API, OAuth, MCP and the tracker.
+   */
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const asset = await serveAppAsset(request, env);
+    return asset ?? app.fetch(request, env, ctx);
+  },
 
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     const run = async (): Promise<void> => {
       await ensureSchema(env.DB);
       const now = new Date(controller.scheduledTime);
       const retention = Number.parseInt(env.HOURLY_RETENTION_DAYS ?? '', 10);
-
-      const daily = controller.cron.startsWith('20 0 ');
+      // The once-a-day trigger: a backstop for the nightly work, and the update check.
+      const backstop = controller.cron.startsWith('25 0 ');
 
       try {
-        if (daily) {
-          await dailyJob(env.DB, now, Number.isFinite(retention) ? retention : 7, cubeEnabled(env));
-        } else {
-          await hourlyJob(env.DB, now);
-        }
+        await scheduledRun(env.DB, now, {
+          retentionDays: Number.isFinite(retention) ? retention : 7,
+          cube: cubeEnabled(env),
+          nightly: backstop,
+          dispatch: await selfDispatch(env),
+        });
       } catch (error) {
         console.error(JSON.stringify({ level: 'error', job: controller.cron, message: String(error) }));
         throw error;
       }
 
       // Deliberately after the rollup and in its own try: GitHub being
-      // unreachable at 00:20 is not a reason to lose a day of stats, and a
-      // thrown error here would retry the whole invocation, rollup included.
-      if (daily) {
+      // unreachable is not a reason to lose a day of stats, and a thrown error
+      // here would retry the whole invocation, rollup included.
+      if (backstop) {
         try {
           await checkForUpdate(env);
         } catch (error) {
@@ -840,4 +765,45 @@ export default {
 
     ctx.waitUntil(run());
   },
-} satisfies ExportedHandler<Env>;
+};
+
+/* ------------------------------------------------------------ fold units -- */
+
+let secretCache: string | null = null;
+
+/** The install's fold secret, created on first use (one row, once). */
+async function foldSecret(db: D1Database): Promise<string | null> {
+  if (secretCache) return secretCache;
+  secretCache = await getSetting(db, SETTING_FOLD_SECRET);
+  return secretCache;
+}
+
+/**
+ * Units go out through the SELF binding (wrangler.jsonc "services"), which
+ * must name this Worker: a renamed Worker needs the binding renamed with it,
+ * or the cron falls back to folding one unit per run inline (README).
+ */
+async function selfDispatch(env: Env): Promise<((sites: number[]) => Promise<void>) | undefined> {
+  const self = (env as Env & { SELF?: Fetcher }).SELF;
+  if (!self) return undefined;
+  let secret = await foldSecret(env.DB);
+  if (!secret) {
+    const bytes = crypto.getRandomValues(new Uint8Array(32));
+    const fresh = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+    await env.DB.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING')
+      .bind(SETTING_FOLD_SECRET, fresh)
+      .run();
+    secretCache = null;
+    secret = await foldSecret(env.DB);
+  }
+  const key = secret ?? '';
+  return async (sites) => {
+    const res = await self.fetch('https://self/internal/fold', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-fold-secret': key },
+      body: JSON.stringify({ sites }),
+    });
+    if (!res.ok) throw new Error(`fold unit answered ${res.status}`);
+    await res.body?.cancel();
+  };
+}

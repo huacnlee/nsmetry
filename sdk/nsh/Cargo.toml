@@ -1,0 +1,24 @@
+[package]
+name = "nsmetry"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Event analytics for Native Shell (NSH) apps, sent to a self-hosted NsMetry instance: batched, retrying, privacy-first"
+repository = "https://github.com/hayaran/edgemetry"
+readme = "README.md"
+keywords = ["nshm", "nsh", "analytics", "events", "privacy"]
+categories = ["gui", "web-programming::http-client"]
+# The nshm is TSX: what an app imports as "nsmetry" (nsh.json "exports"). The
+# crate exists so `nsh add nsmetry` can fetch it from crates.io; it carries no
+# Rust an app has to build. The example app stays out of the package.
+include = ["/Cargo.toml", "/nsh.json", "/README.md", "/LICENSE", "/src/**/*.ts", "/native/src/**/*.rs"]
+
+# Built on its own, not as part of an app's workspace.
+[workspace]
+
+[lib]
+# Cargo needs a target to package a crate; this one is empty (see the file).
+path = "native/src/lib.rs"
+
+[dependencies]
+nsh-core = "0.7.0"

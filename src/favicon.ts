@@ -16,7 +16,7 @@
  * is the variant that reads on either tab strip, so the fallback is the safe one
  * rather than the broken one.
  */
-export const FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Edgemetry">
+export const FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="NsMetry">
 <style>
 .bg { fill:#1A1922 }
 .bar { fill:#F7F6F3 }

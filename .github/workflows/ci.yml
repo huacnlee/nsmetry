@@ -18,7 +18,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - run: npm ci
@@ -39,4 +39,38 @@ jobs:
       # drifted from wrangler.jsonc — which is exactly when it should.
       - run: npm run typecheck
 
+      # The budget test imports app/api.ts, whose tsconfig extends one `nsh check` generates
+      # (app/.nsh/, not committed). This job has no nsh CLI, so give the transform an empty base.
+      - name: Stub the NSH-generated tsconfig
+        run: test -f app/.nsh/tsconfig.json || { mkdir -p app/.nsh && echo '{}' > app/.nsh/tsconfig.json; }
+
       - run: npm test
+
+      # The JavaScript SDK (sdk/js) has its own Node suite.
+      # No lockfile: its only dependencies are TypeScript and Vitest, for development.
+      - run: npm install --no-audit --no-fund
+        working-directory: sdk/js
+      - run: npm run typecheck
+        working-directory: sdk/js
+      - run: npm test
+        working-directory: sdk/js
+
+  # The apps (app/) and the NSH SDK (sdk/nsh) with its example app: type-checked, built and tested by `nsh`
+  # on the pinned NSH release (setup-nsh `version`), the same one release.yml packages with, so an NSH change that breaks
+  # the app shows up here instead of at release time.
+  nsh:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-nsh
+        with:
+          target: linux
+      - run: nsh check
+      - run: nsh build
+      - run: nsh test
+      - run: nsh check
+        working-directory: sdk/nsh/example
+      - run: nsh build
+        working-directory: sdk/nsh/example
+      - run: nsh test
+        working-directory: sdk/nsh/example

@@ -1,0 +1,6 @@
+{
+  "name": "nsmetry",
+  "version": "0.1.0",
+  "nsh": ">=0.7",
+  "exports": { "nsmetry": "src/index.ts" }
+}

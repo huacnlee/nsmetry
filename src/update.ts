@@ -143,7 +143,7 @@ export async function checkForUpdate(env: Env): Promise<UpdateStatus | null> {
   if (!updateCheckEnabled(env)) return null;
 
   const response = await fetch(RELEASES_ATOM, {
-    headers: { accept: 'application/atom+xml', 'user-agent': `Edgemetry/${VERSION}` },
+    headers: { accept: 'application/atom+xml', 'user-agent': `NsMetry/${VERSION}` },
     signal: AbortSignal.timeout(5000),
   });
   if (!response.ok) throw new Error(`releases feed responded ${response.status}`);

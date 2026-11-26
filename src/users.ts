@@ -2,15 +2,24 @@
  * Accounts and authorisation.
  *
  * Two roles, deliberately:
- *   owner  — administers the instance, implicitly sees every site
- *   viewer — read-only, and only for sites granted in site_access
+ *   owner  — the one administrator, named by ADMIN_EMAIL; sees every site
+ *   viewer — invited by the administrator, read-only, and only for the sites
+ *            granted in site_access
  *
- * Viewers exist so you can hand a client a login to their own dashboard without
- * exposing your other properties. Anything more granular than this is a
- * permission matrix nobody wants to maintain in a tool this size.
+ * The role is *derived*, not stored: `withRole` compares the account's email
+ * with ADMIN_EMAIL each time an account is loaded. That is what lets the
+ * deployment variable move admin rights, and it is how instances from the
+ * password era carry over: every old "owner" whose email is not ADMIN_EMAIL
+ * becomes a viewer with whatever explicit grants it had (often none, so it
+ * sees nothing until the administrator grants sites). The `role` column stays
+ * in the table but is only a record of what the account was last seen as.
+ *
+ * The password columns stay too — SQLite cannot drop a NOT NULL column without
+ * rebuilding the table — and are written as '' for new accounts. Nothing reads
+ * them any more.
  */
 
-import { derivePasswordHash, digestsMatch, randomHex } from './auth';
+import { revokeUserSessionsStatement } from './sessions';
 import type { SiteRow } from './stats';
 
 export type Role = 'owner' | 'viewer';
@@ -18,14 +27,13 @@ export type Role = 'owner' | 'viewer';
 export interface UserRow {
   id: number;
   email: string;
-  password_hash: string;
-  password_salt: string;
+  /** Derived from ADMIN_EMAIL once the row has been through `withRole`. */
   role: Role;
   token_version: number;
   created_at: number;
 }
 
-/** What the dashboard is allowed to see about an account. */
+/** What the apps are allowed to see about an account. */
 export interface PublicUser {
   id: number;
   email: string;
@@ -34,10 +42,8 @@ export interface PublicUser {
   siteIds: number[];
 }
 
-export const MIN_PASSWORD_LENGTH = 10;
-
 // Permissive on purpose: this is an identifier for a self-hosted tool, not a
-// deliverability check, and the migrated legacy account is literally "admin".
+// deliverability check. Whether the address works is proved by the code.
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function normalizeEmail(raw: string): string {
@@ -48,24 +54,34 @@ export function isValidEmail(email: string): boolean {
   return EMAIL_PATTERN.test(email);
 }
 
+const USER_COLUMNS = 'id, email, role, token_version, created_at';
+
+/**
+ * The account with its effective role. Every row that reaches an
+ * authorisation decision must come through here — a raw row's `role` column
+ * is history, not permission.
+ */
+export function withRole(user: UserRow, adminEmail: string): UserRow {
+  return { ...user, role: adminEmail !== '' && user.email === adminEmail ? 'owner' : 'viewer' };
+}
+
+export function isOwner(user: UserRow): boolean {
+  return user.role === 'owner';
+}
+
 export async function countUsers(db: D1Database): Promise<number> {
   const row = await db.prepare('SELECT COUNT(*) AS n FROM users').first<{ n: number }>();
   return row?.n ?? 0;
 }
 
-export async function countOwners(db: D1Database): Promise<number> {
-  const row = await db
-    .prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'owner'")
-    .first<{ n: number }>();
-  return row?.n ?? 0;
-}
-
+/** The raw row (role not yet derived). Pass it through `withRole`. */
 export async function getUserById(db: D1Database, id: number): Promise<UserRow | null> {
-  return db.prepare('SELECT * FROM users WHERE id = ?').bind(id).first<UserRow>();
+  return db.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`).bind(id).first<UserRow>();
 }
 
+/** The raw row (role not yet derived). Pass it through `withRole`. */
 export async function getUserByEmail(db: D1Database, email: string): Promise<UserRow | null> {
-  return db.prepare('SELECT * FROM users WHERE email = ?').bind(email).first<UserRow>();
+  return db.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE email = ?`).bind(email).first<UserRow>();
 }
 
 async function siteIdsByUser(db: D1Database): Promise<Map<number, number[]>> {
@@ -82,15 +98,17 @@ async function siteIdsByUser(db: D1Database): Promise<Map<number, number[]>> {
   return map;
 }
 
-export async function listUsers(db: D1Database): Promise<PublicUser[]> {
+/** Every account, the administrator first, then in the order they were invited. */
+export async function listUsers(db: D1Database, adminEmail: string): Promise<PublicUser[]> {
   const [{ results }, grants] = await Promise.all([
-    db
-      .prepare('SELECT id, email, role, created_at FROM users ORDER BY id')
-      .all<Omit<PublicUser, 'siteIds'>>(),
+    db.prepare(`SELECT ${USER_COLUMNS} FROM users ORDER BY id`).all<UserRow>(),
     siteIdsByUser(db),
   ]);
 
-  return results.map((user) => ({ ...user, siteIds: grants.get(user.id) ?? [] }));
+  return results
+    .map((row) => withRole(row, adminEmail))
+    .sort((a, b) => Number(isOwner(b)) - Number(isOwner(a)) || a.id - b.id)
+    .map((user) => toPublicUser(user, grants.get(user.id) ?? []));
 }
 
 export function toPublicUser(user: UserRow, siteIds: number[]): PublicUser {
@@ -111,30 +129,21 @@ export async function siteIdsFor(db: D1Database, userId: number): Promise<number
   return results.map((row) => row.site_id);
 }
 
-export interface NewUser {
-  email: string;
-  password: string;
-  role: Role;
-  siteIds: number[];
-}
-
+/**
+ * Invite a viewer. Returns null if the email already has an account — email
+ * is UNIQUE, so the insert simply changes nothing.
+ */
 export async function createUser(
   db: D1Database,
-  input: NewUser,
-  iterations: number,
+  input: { email: string; siteIds: number[] },
 ): Promise<UserRow | null> {
-  const salt = randomHex(16);
-  const hash = await derivePasswordHash(input.password, salt, iterations);
-
   const inserted = await db
     .prepare(
       `INSERT OR IGNORE INTO users (email, password_hash, password_salt, role, created_at)
-       VALUES (?, ?, ?, ?, ?)`,
+       VALUES (?, '', '', 'viewer', ?)`,
     )
-    .bind(input.email, hash, salt, input.role, Math.floor(Date.now() / 1000))
+    .bind(input.email, Math.floor(Date.now() / 1000))
     .run();
-
-  // Email is UNIQUE, so zero changes means the address is already taken.
   if (inserted.meta.changes === 0) return null;
 
   const user = await getUserByEmail(db, input.email);
@@ -143,93 +152,64 @@ export async function createUser(
 }
 
 /**
- * Create the very first account. The WHERE NOT EXISTS makes this atomic, so two
- * people racing to claim a fresh deployment cannot both become owner.
+ * The administrator's account row, created on their first sign-in. The stored
+ * role is set to match, and any other row still claiming 'owner' is set to
+ * 'viewer' — cosmetic (the role is derived), but it keeps the table honest for
+ * anyone reading it with `wrangler d1 execute`. Both UPDATEs touch zero rows,
+ * and so cost zero writes, once things agree.
  */
-export async function createFirstOwner(
-  db: D1Database,
-  email: string,
-  password: string,
-  iterations: number,
-): Promise<UserRow | null> {
-  const salt = randomHex(16);
-  const hash = await derivePasswordHash(password, salt, iterations);
-
-  const inserted = await db
-    .prepare(
-      `INSERT INTO users (email, password_hash, password_salt, role, created_at)
-       SELECT ?, ?, ?, 'owner', ?
-       WHERE NOT EXISTS (SELECT 1 FROM users)`,
-    )
-    .bind(email, hash, salt, Math.floor(Date.now() / 1000))
-    .run();
-
-  if (inserted.meta.changes === 0) return null;
+export async function ensureAdminAccount(db: D1Database, email: string): Promise<UserRow | null> {
+  await db.batch([
+    db
+      .prepare(
+        `INSERT OR IGNORE INTO users (email, password_hash, password_salt, role, created_at)
+         VALUES (?, '', '', 'owner', ?)`,
+      )
+      .bind(email, Math.floor(Date.now() / 1000)),
+    db.prepare("UPDATE users SET role = 'owner' WHERE email = ? AND role <> 'owner'").bind(email),
+    db.prepare("UPDATE users SET role = 'viewer' WHERE email <> ? AND role = 'owner'").bind(email),
+  ]);
   return getUserByEmail(db, email);
 }
 
-export async function setSiteAccess(
-  db: D1Database,
-  userId: number,
-  siteIds: number[],
-): Promise<void> {
+/**
+ * Replace a user's grants. Ids that are not sites are dropped by the
+ * INSERT … SELECT rather than stored as dangling grants.
+ */
+export async function setSiteAccess(db: D1Database, userId: number, siteIds: number[]): Promise<void> {
   const statements = [db.prepare('DELETE FROM site_access WHERE user_id = ?').bind(userId)];
   for (const siteId of siteIds) {
     statements.push(
       db
-        .prepare('INSERT OR IGNORE INTO site_access (user_id, site_id) VALUES (?, ?)')
+        .prepare('INSERT OR IGNORE INTO site_access (user_id, site_id) SELECT ?, id FROM sites WHERE id = ?')
         .bind(userId, siteId),
     );
   }
   await db.batch(statements);
 }
 
-export async function setRole(db: D1Database, userId: number, role: Role): Promise<void> {
-  await db.prepare('UPDATE users SET role = ? WHERE id = ?').bind(role, userId).run();
-}
-
-/** Bumping token_version signs the user out of every existing session. */
-export async function setPassword(
-  db: D1Database,
-  userId: number,
-  password: string,
-  iterations: number,
-): Promise<void> {
-  const salt = randomHex(16);
-  const hash = await derivePasswordHash(password, salt, iterations);
-  await db
-    .prepare(
-      `UPDATE users
-       SET password_hash = ?, password_salt = ?, token_version = token_version + 1
-       WHERE id = ?`,
-    )
-    .bind(hash, salt, userId)
-    .run();
-}
-
-export async function deleteUser(db: D1Database, userId: number): Promise<void> {
+/**
+ * Remove an account and everything that lets it in: bearer sessions, OAuth
+ * grants and pending OAuth codes, pending sign-in codes and site grants.
+ *
+ * The OAuth rows go for more than tidiness. `users.id` is a plain INTEGER
+ * PRIMARY KEY, so SQLite may hand a deleted account's id to the next account
+ * created — anything keyed only by user id would otherwise carry over.
+ */
+export async function deleteUser(db: D1Database, user: UserRow): Promise<void> {
   await db.batch([
-    db.prepare('DELETE FROM site_access WHERE user_id = ?').bind(userId),
-    db.prepare('DELETE FROM users WHERE id = ?').bind(userId),
+    revokeUserSessionsStatement(db, user.id),
+    db.prepare('DELETE FROM oauth_grants WHERE user_id = ?').bind(user.id),
+    db.prepare('DELETE FROM oauth_codes WHERE user_id = ?').bind(user.id),
+    db.prepare('DELETE FROM auth_codes WHERE email = ?').bind(user.email),
+    db.prepare('DELETE FROM site_access WHERE user_id = ?').bind(user.id),
+    db.prepare('DELETE FROM users WHERE id = ?').bind(user.id),
   ]);
-}
-
-export async function verifyPassword(
-  user: UserRow,
-  password: string,
-  iterations: number,
-): Promise<boolean> {
-  const candidate = await derivePasswordHash(password, user.password_salt, iterations);
-  return digestsMatch(candidate, user.password_hash);
 }
 
 /* ------------------------------------------------------------ authorisation */
 
-export function isOwner(user: UserRow): boolean {
-  return user.role === 'owner';
-}
-
-/** Sites this user may look at. Owners see everything without explicit grants. */
+/** Sites this user may look at. The administrator sees everything without grants. */
 export async function accessibleSites(db: D1Database, user: UserRow): Promise<SiteRow[]> {
   if (isOwner(user)) {
     const { results } = await db
@@ -251,11 +231,7 @@ export async function accessibleSites(db: D1Database, user: UserRow): Promise<Si
   return results;
 }
 
-export async function canAccessSite(
-  db: D1Database,
-  user: UserRow,
-  siteId: number,
-): Promise<boolean> {
+export async function canAccessSite(db: D1Database, user: UserRow, siteId: number): Promise<boolean> {
   if (isOwner(user)) return true;
   const row = await db
     .prepare('SELECT 1 AS ok FROM site_access WHERE user_id = ? AND site_id = ?')

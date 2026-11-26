@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "packages": [
+    {
+      "name": "nsmetry",
+      "version": "0.1.0",
+      "path": "..",
+      "module": "nsmetry/native",
+      "exports": {
+        "nsmetry": "src/index.ts"
+      }
+    }
+  ]
+}

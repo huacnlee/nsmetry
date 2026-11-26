@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "sourceMap": false,
+    // The sources must not lean on Node's types: they run everywhere.
+    "types": []
+  },
+  "include": ["src/**/*.ts"]
+}

@@ -51,10 +51,10 @@ jobs:
             '<!-- how-to-update -->' \
             '## Updating to this release' \
             '' \
-            'Your Edgemetry is its own repository — the deploy button imported this one' \
+            'Your NsMetry is its own repository — the deploy button imported this one' \
             'rather than forking it, so GitHub gives you no **Sync fork** button.' \
             '' \
-            'In your copy: **Actions → Update Edgemetry → Run workflow**, then merge the' \
+            'In your copy: **Actions → Update NsMetry → Run workflow**, then merge the' \
             'pull request it opens. Merging is what deploys. Your data and your Cloudflare' \
             'configuration are untouched — they live in D1 and in Cloudflare, not in the' \
             'repository.' \
@@ -67,7 +67,7 @@ jobs:
             'git fetch upstream main' \
             'git reset --hard upstream/main' \
             'git reset --soft origin/main' \
-            'git commit -m "Update Edgemetry"' \
+            'git commit -m "Update NsMetry"' \
             'git push' \
             '```' \
             '' \

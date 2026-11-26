@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "edgemetry",
+  "name": "nsmetry",
   "main": "src/index.ts",
   "compatibility_date": "2026-07-28",
   "compatibility_flags": ["nodejs_compat"],
@@ -22,20 +22,75 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "edgemetry"
+      "database_name": "nsmetry"
     }
   ],
 
+  // Uncomment to send sign-in codes with Cloudflare Email Sending (see
+  // MAIL_FROM below). Left out by default because it needs a domain onboarded
+  // to Email Sending first; without it codes go to SMTP or the logs.
+  // "send_email": [{ "name": "EMAIL" }],
+
   "triggers": {
-    // :05 past the hour — roll the completed hour into stats_hourly.
-    // 00:20 UTC — roll yesterday into stats_daily, then drop its raw tables.
-    "crons": ["5 * * * *", "20 0 * * *"]
+    // Every ten minutes — fold the raw rows that arrived since each site's
+    // cursor into its day_state; after midnight, turn yesterday into blocks
+    // (src/rollup.ts). 00:25 UTC — a backstop for that nightly work, plus the
+    // update check.
+    "crons": ["*/10 * * * *", "25 0 * * *"]
   },
 
-  // Note: the dashboard ships inside the Worker bundle rather than as static
-  // assets — one less thing for the deploy button to wire up, and it keeps every
-  // route under our own control instead of the asset router's. No module rule is
-  // needed; Wrangler already imports *.html as a Text module by default.
+  // The cron hands each fold unit to this same Worker as its own request, so
+  // every unit gets a request's CPU budget instead of sharing the cron's.
+  // `service` must be this Worker's own name (the "name" at the top): if you
+  // rename the Worker, rename it here too. Without a working binding the cron
+  // still folds, one unit per run, which is enough for a few quiet sites.
+  "services": [{ "binding": "SELF", "service": "nsmetry" }],
+
+  // The app: the NSH web build (app/, packaged by app/build-web.sh into
+  // app/dist/web/nsmetry), served from Cloudflare's asset store. Asset requests
+  // the store answers on its own do not count against the free plan's Worker
+  // requests. `run_worker_first` names what must reach the Worker anyway:
+  //   - the API, OAuth, MCP and discovery paths, which a browser may open as a
+  //     page (the OAuth sign-in) and must never get the app's index.html for;
+  //   - `/*.js`, because the tracker answers GET /<any name>.js — src/assets.ts
+  //     hands the app's own (hashed or nested) scripts back to the asset store;
+  //   - `/*.wasm` and `/*.css`, to send the Brotli copies the build already made.
+  // POST /<name> (the tracker's beacon) needs no entry: a request that matches
+  // no file falls through to the Worker. That is also why there is no
+  // single-page fallback — with one, the asset store answers a POST to any
+  // unknown path itself, with 405, and beacons never arrive. The app keeps no
+  // state in its URL, so `/` is the only page it needs.
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "./app/dist/web/nsmetry",
+    "not_found_handling": "none",
+    "run_worker_first": [
+      "/api/*",
+      "/internal/*",
+      "/mcp",
+      "/oauth/*",
+      "/.well-known/*",
+      "/health",
+      "/robots.txt",
+      "/favicon.svg",
+      "/favicon.ico",
+      "/*.js",
+      "/*.wasm",
+      "/*.css"
+    ]
+  },
+
+  // Makes sure that directory exists before every `wrangler deploy` and
+  // `wrangler dev`, whoever runs them — you, `npm run deploy`, or Cloudflare's
+  // build for the Deploy button, which has no `nsh` CLI. It builds the app with
+  // `nsh` when it is installed, otherwise downloads the web package attached to
+  // this version's GitHub release, otherwise writes a page saying how to get
+  // one (the API, the tracker and MCP work either way). It does nothing when a
+  // build is already there. See scripts/web-package.mjs.
+  "build": {
+    "command": "node scripts/web-package.mjs",
+    "watch_dir": "scripts"
+  },
 
   "vars": {
     // Days of hourly rollups to keep. Daily rollups are kept forever.
@@ -46,12 +101,23 @@
     // Set to "off" on an unusually diverse instance to trade filtering for a
     // smaller write budget.
     "FILTERS": "on",
-    // PBKDF2 iterations for the admin password. The Workers *free* plan caps
-    // CPU at 10ms per request, which is why this is not the usual 100k+.
-    // On the $5/mo paid plan you can safely raise this to 200000.
-    "PBKDF2_ITERATIONS": "15000",
+    // The one administrator's email. There are no passwords: whoever can read
+    // this mailbox signs in with an emailed one-time code and can invite other
+    // emails as read-only viewers. Required — until it is set, sign-in answers
+    // with an error saying so. Admin rights follow this value, so changing it
+    // and redeploying moves them to another address.
+    "ADMIN_EMAIL": "",
+    // Sender address for the optional Cloudflare Email Sending binding below.
+    // How sign-in codes are delivered, first match wins:
+    //   1. SMTP secret: `wrangler secret put SMTP` with JSON
+    //      {"host":"smtp.example.com","port":465,"secure":true,"user":"…","pass":"…","from":"NsMetry <me@example.com>"}
+    //   2. The "send_email" binding named EMAIL plus this MAIL_FROM, on a domain
+    //      onboarded with `wrangler email sending enable example.com`.
+    //   3. Neither: the code is written to the Worker logs (`wrangler tail`,
+    //      or Workers Logs in the dashboard), and the app says to look there.
+    "MAIL_FROM": "",
     // Once a day, beside the nightly rollup, the Worker asks GitHub for the
-    // newest Edgemetry release and stores the answer so the account menu can
+    // newest NsMetry release and stores the answer so the account menu can
     // say whether this instance is behind. It is the only request this project
     // makes to anyone, it happens on a cron rather than in anybody's browser,
     // and it says nothing about you beyond the version it is asking about.

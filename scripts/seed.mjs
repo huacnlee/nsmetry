@@ -16,7 +16,7 @@
  * the daily job, and you get the same rollups and the same filter cube you
  * would have had if the traffic were real:
  *
- *   npx wrangler d1 execute edgemetry --local --file .seed.sql
+ *   npx wrangler d1 execute nsmetry --local --file .seed.sql
  *   curl "http://localhost:8787/cdn-cgi/handler/scheduled?cron=20+0+*+*+*"
  */
 
@@ -166,7 +166,7 @@ function writeHistory() {
 
   console.log(`Wrote ${events.toLocaleString()} events across ${days + 1} days to ${file}\n`);
   console.log('Load it and fold the finished days into rollups:\n');
-  console.log(`  npx wrangler d1 execute edgemetry --local --file ${file}`);
+  console.log(`  npx wrangler d1 execute nsmetry --local --file ${file}`);
   console.log(`  curl "${url}/cdn-cgi/handler/scheduled?cron=20+0+*+*+*"\n`);
 }
 

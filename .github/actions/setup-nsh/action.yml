@@ -1,0 +1,146 @@
+name: Set up nsh
+description: >
+  Puts on PATH the nsh CLI and the runtime for one target, from a pinned NSH release (`version`), and the
+  toolchains `nsh` needs to build the app's native modules for that target (nsh-icon-lucide and the NsMetry
+  NSH SDK are Rust nshms, so every check, test and package compiles Rust). Adapted from Noop's: NsMetry ships
+  no Linux runtime of its own, so it takes every runtime as published and never builds NSH from source.
+inputs:
+  target:
+    description: linux, windows, macos, ios, android or web
+    required: true
+  version:
+    description: The NSH release tag whose CLI and runtimes are used. Pinned so every build of a tag is reproducible.
+    default: v0.7.1
+runs:
+  using: composite
+  steps:
+    # A release tag publishes the CLI and every runtime together; the tag keys the cache.
+    - id: ref
+      shell: bash
+      env:
+        NSH_VERSION: ${{ inputs.version }}
+      run: |
+        echo "NSH $NSH_VERSION"
+        echo "sha=$NSH_VERSION" >> "$GITHUB_OUTPUT"
+
+    # Linux binaries link the image's glibc, so the image is part of the key.
+    - id: image
+      shell: bash
+      run: |
+        if [ "$RUNNER_OS" = Linux ]; then . /etc/os-release; echo "key=-$ID$VERSION_ID" >> "$GITHUB_OUTPUT"; fi
+
+    - id: cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.nsh-dist
+        key: nsh-dist-${{ runner.os }}-${{ runner.arch }}${{ steps.image.outputs.key }}-${{ inputs.target }}-${{ steps.ref.outputs.sha }}
+
+    - if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        TARGET: ${{ inputs.target }}
+      run: |
+        case "$RUNNER_OS-$RUNNER_ARCH" in
+          Linux-X64) asset=nsh-linux-x86_64.tar.gz ;;
+          macOS-ARM64) asset=nsh-macos-arm64.tar.gz ;;
+          Windows-X64) asset=nsh-windows-x86_64.zip ;;
+          *) echo "::error::no NSH ${{ inputs.version }} for $RUNNER_OS-$RUNNER_ARCH"; exit 1 ;;
+        esac
+        assets=("$asset")
+        [ "$TARGET" != ios ] || assets+=(nsh-ios-macos-arm64.tar.gz)
+        tmp="$RUNNER_TEMP/nsh-release"
+        rm -rf "$tmp" && mkdir -p "$tmp/x"
+        for a in "${assets[@]}"; do
+          gh release download "${{ inputs.version }}" -R longbridge/nsh -p "$a" -p "$a.sha256" -D "$tmp"
+          (cd "$tmp" && { sha256sum -c "$a.sha256" 2>/dev/null || shasum -a 256 -c "$a.sha256"; })
+          case "$a" in
+            *.zip) unzip -q -o "$tmp/$a" -d "$tmp/x" ;;
+            *) tar xzf "$tmp/$a" -C "$tmp/x" ;;
+          esac
+        done
+        rm -rf "$HOME/.nsh-dist" && mkdir -p "$HOME/.nsh-dist"
+        cp -R "$tmp/x/nsh/bin" "$tmp/x/nsh/runtime" "$HOME/.nsh-dist/"
+
+    # `nsh package` needs a JDK and the SDK's platform for Android.
+    - if: inputs.target == 'android'
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: "17"
+    - if: inputs.target == 'android'
+      shell: bash
+      run: |
+        if [ ! -f "$ANDROID_HOME/platforms/android-35/android.jar" ]; then
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" > /dev/null || true
+        fi
+        test -f "$ANDROID_HOME/platforms/android-35/android.jar"
+
+    - id: rust
+      shell: bash
+      env:
+        TARGET: ${{ inputs.target }}
+      run: |
+        case "$TARGET" in
+          ios) targets=aarch64-apple-ios,aarch64-apple-ios-sim ;;
+          android) targets=aarch64-linux-android,armv7-linux-androideabi ;;
+          web) targets=wasm32-unknown-unknown ;;
+          *) targets="" ;;
+        esac
+        echo "targets=$targets" >> "$GITHUB_OUTPUT"
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ steps.rust.outputs.targets }}
+
+    # On the web the nshms call the browser through wasm-bindgen, whose CLI must be the version nsh links;
+    # their C code needs an `ar` that knows WebAssembly objects (app/build-web.sh finds llvm-ar on PATH).
+    - id: wasm-bindgen
+      if: inputs.target == 'web'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        REF: ${{ steps.ref.outputs.sha }}
+      run: |
+        version="$(gh api "repos/longbridge/nsh/contents/Cargo.toml?ref=$REF" -H 'Accept: application/vnd.github.raw' \
+          | sed -n 's/^wasm-bindgen = .*"=\([0-9.]*\)".*/\1/p' | head -1)"
+        [ -n "$version" ] || { echo "::error::no wasm-bindgen pin in longbridge/nsh's Cargo.toml at $REF"; exit 1; }
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+    - if: inputs.target == 'web'
+      uses: taiki-e/install-action@v2
+      with:
+        tool: wasm-bindgen-cli@${{ steps.wasm-bindgen.outputs.version }}
+    - if: inputs.target == 'web' && runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update -qq && sudo apt-get install -y -qq llvm > /dev/null
+        echo "AR_wasm32_unknown_unknown=llvm-ar" >> "$GITHUB_ENV"
+    # The Linux platform crates bind GTK 4 (4.14+; Ubuntu 24.04 ships it), and GStreamer (media), so building for linux needs their dev packages.
+    - if: inputs.target == 'linux' && runner.os == 'Linux'
+      shell: bash
+      run: sudo apt-get update -qq && sudo apt-get install -y -qq libgtk-4-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev > /dev/null
+
+    - if: runner.os == 'Windows'
+      shell: bash
+      run: |
+        # QuickJS is C: bindgen needs libclang, which the image's LLVM has.
+        echo "LIBCLANG_PATH=C:\\Program Files\\LLVM\\bin" >> "$GITHUB_ENV"
+        echo "RUST_MIN_STACK=268435456" >> "$GITHUB_ENV"
+
+    # The nshms' Rust builds: Cargo's downloads, the installed nshms and the generated hosts' workspaces.
+    - uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          ~/.nsh/nshms
+          ~/.nsh/builds
+          ~/.nsh/target
+        key: nsh-app-rust-${{ runner.os }}-${{ runner.arch }}${{ steps.image.outputs.key }}-${{ inputs.target }}-${{ steps.ref.outputs.sha }}-${{ hashFiles('nsh.lock', 'sdk/nsh/Cargo.lock') }}
+        restore-keys: |
+          nsh-app-rust-${{ runner.os }}-${{ runner.arch }}${{ steps.image.outputs.key }}-${{ inputs.target }}-
+
+    - shell: bash
+      run: |
+        bin="$HOME/.nsh-dist/bin"
+        [ "$RUNNER_OS" != Windows ] || bin="$(cygpath -w "$bin")"
+        echo "$bin" >> "$GITHUB_PATH"

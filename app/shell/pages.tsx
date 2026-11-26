@@ -7,10 +7,10 @@
  * stays open when the window crosses 900pt. The store resets the stack on a section or site change.
  */
 import type { Component, JSX } from "nsh";
-import { Scroll, View } from "nsh";
-import { closeDetail, currentSection, type DetailPage, pageStack, type Section } from "../store";
-import { Heading, PageHeader, pageInset, PageStack, space, StackPage, systemHeader, Txt, width } from "../ui";
-import { FilterBar } from "./controls";
+import { computed, Scroll, View } from "nsh";
+import { closeDetail, currentSection, currentSiteId, type DetailPage, isOwner, pageStack, type Section } from "../store";
+import { EmptyState, Heading, PageHeader, pageInset, PageStack, space, StackPage, systemHeader, Txt, width } from "../ui";
+import { FilterBar, openAddSite } from "./controls";
 import { labelOf } from "./nav";
 
 /** A page's scroll: the filter bar, then the page, in the content column of the layout. */
@@ -33,10 +33,32 @@ function PageScroll(props: { wide: boolean; children?: JSX.Element }) {
   );
 }
 
-/** The current section's screen; only a section change makes a new one. */
+/** The sections that read a site's numbers, and so have nothing to show before one is chosen. */
+const SITE_SECTIONS: readonly Section[] = ["overview", "users", "events", "pages", "sources", "geography", "tech"];
+
+/** What an analytics section shows on an instance with no site yet, instead of loading forever. */
+function NoSite() {
+  return (
+    <EmptyState
+      testID="no-site"
+      icon="geography"
+      title="No site yet"
+      body={isOwner()
+        ? "Add a website (example.com) or an app (a bare name such as my-app), then install the tracker from Settings."
+        : "The administrator has not shared a site with you yet."}
+      action={isOwner() ? { label: "Add site", onPress: openAddSite } : undefined}
+    />
+  );
+}
+
+/** The current section's screen; only a section change (or a first site) makes a new one. */
 function CurrentScreen(props: { screens: Record<Section, Component> }) {
+  // A boolean, so switching between two sites does not rebuild the screen (its resources reload).
+  const hasSite = computed(() => currentSiteId() !== null);
   return () => {
-    const Screen = props.screens[currentSection()];
+    const s = currentSection();
+    if (SITE_SECTIONS.includes(s) && !hasSite()) return <NoSite />;
+    const Screen = props.screens[s];
     return <Screen />;
   };
 }

@@ -54,8 +54,11 @@ import {
  * Which site the screens show; the owner can add one from the same menu. `block` is the sidebar's
  * form: a full-width nav-row trigger, left-aligned with the brand and the sections.
  */
+/** Whether the "Add a site" dialog is open; the switcher owns it, the empty state opens it too. */
+const adding = signal(false);
+export const openAddSite = () => adding.set(true);
+
 export function SiteSwitcher(props: { block?: boolean }) {
-  const adding = signal(false);
   const domain = signal("");
   const error = signal<string | null>(null);
   const busy = signal(false);

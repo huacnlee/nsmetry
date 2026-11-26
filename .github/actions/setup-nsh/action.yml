@@ -1,6 +1,6 @@
 name: Set up nsh
 description: >
-  Puts on PATH the nsh CLI and the runtime for one target, from the prebuilt NSH nightly release, and the
+  Puts on PATH the nsh CLI and the runtime for one target, from a pinned NSH release (`version`), and the
   toolchains `nsh` needs to build the app's native modules for that target (nsh-icon-lucide and the NsMetry
   NSH SDK are Rust nshms, so every check, test and package compiles Rust). Adapted from Noop's: NsMetry ships
   no Linux runtime of its own, so it takes every runtime as published and never builds NSH from source.
@@ -8,19 +8,20 @@ inputs:
   target:
     description: linux, windows, macos, ios, android or web
     required: true
+  version:
+    description: The NSH release tag whose CLI and runtimes are used. Pinned so every build of a tag is reproducible.
+    default: v0.7.1
 runs:
   using: composite
   steps:
-    # The nightly release is the one commit whose CLI and runtimes are published together. Resolving it once
-    # per run keeps every job of a release on the same NSH, and keys the cache on it.
+    # A release tag publishes the CLI and every runtime together; the tag keys the cache.
     - id: ref
       shell: bash
       env:
-        GH_TOKEN: ${{ github.token }}
+        NSH_VERSION: ${{ inputs.version }}
       run: |
-        sha="$(gh release view nightly -R longbridge/nsh --json targetCommitish -q .targetCommitish)"
-        echo "NSH nightly is $sha"
-        echo "sha=$sha" >> "$GITHUB_OUTPUT"
+        echo "NSH $NSH_VERSION"
+        echo "sha=$NSH_VERSION" >> "$GITHUB_OUTPUT"
 
     # Linux binaries link the image's glibc, so the image is part of the key.
     - id: image
@@ -44,14 +45,14 @@ runs:
           Linux-X64) asset=nsh-linux-x86_64.tar.gz ;;
           macOS-ARM64) asset=nsh-macos-arm64.tar.gz ;;
           Windows-X64) asset=nsh-windows-x86_64.zip ;;
-          *) echo "::error::no NSH nightly for $RUNNER_OS-$RUNNER_ARCH"; exit 1 ;;
+          *) echo "::error::no NSH ${{ inputs.version }} for $RUNNER_OS-$RUNNER_ARCH"; exit 1 ;;
         esac
         assets=("$asset")
         [ "$TARGET" != ios ] || assets+=(nsh-ios-macos-arm64.tar.gz)
-        tmp="$RUNNER_TEMP/nsh-nightly"
+        tmp="$RUNNER_TEMP/nsh-release"
         rm -rf "$tmp" && mkdir -p "$tmp/x"
         for a in "${assets[@]}"; do
-          gh release download nightly -R longbridge/nsh -p "$a" -p "$a.sha256" -D "$tmp"
+          gh release download "${{ inputs.version }}" -R longbridge/nsh -p "$a" -p "$a.sha256" -D "$tmp"
           (cd "$tmp" && { sha256sum -c "$a.sha256" 2>/dev/null || shasum -a 256 -c "$a.sha256"; })
           case "$a" in
             *.zip) unzip -q -o "$tmp/$a" -d "$tmp/x" ;;

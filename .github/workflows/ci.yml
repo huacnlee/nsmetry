@@ -56,7 +56,7 @@ jobs:
         working-directory: sdk/js
 
   # The apps (app/) and the NSH SDK (sdk/nsh) with its example app: type-checked, built and tested by `nsh`
-  # on the current NSH nightly, the same commit release.yml packages with, so an NSH change that breaks
+  # on the pinned NSH release (setup-nsh `version`), the same one release.yml packages with, so an NSH change that breaks
   # the app shows up here instead of at release time.
   nsh:
     runs-on: ubuntu-24.04

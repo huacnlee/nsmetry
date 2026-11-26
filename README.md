@@ -137,7 +137,10 @@ instance — see [Installing it](#installing-it).
 
 ```bash
 npm install
-# set ADMIN_EMAIL in wrangler.jsonc first
+# put your settings in .env (gitignored); scripts/deploy.mjs passes them to the Worker:
+#   ADMIN_EMAIL=me@example.com
+#   MAIL_FROM=noreply@example.com     # optional: Cloudflare Email Sending, domain onboarded first
+#   CLOUDFLARE_ACCOUNT_ID=...         # optional: when your login has several accounts
 npm run deploy
 ```
 

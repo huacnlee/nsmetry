@@ -113,10 +113,10 @@ runs:
       run: |
         sudo apt-get update -qq && sudo apt-get install -y -qq llvm > /dev/null
         echo "AR_wasm32_unknown_unknown=llvm-ar" >> "$GITHUB_ENV"
-    # The Linux platform crates bind GTK 4 (4.14+; Ubuntu 24.04 ships it), so building for linux needs its dev packages.
+    # The Linux platform crates bind GTK 4 (4.14+; Ubuntu 24.04 ships it), and GStreamer (media), so building for linux needs their dev packages.
     - if: inputs.target == 'linux' && runner.os == 'Linux'
       shell: bash
-      run: sudo apt-get update -qq && sudo apt-get install -y -qq libgtk-4-dev > /dev/null
+      run: sudo apt-get update -qq && sudo apt-get install -y -qq libgtk-4-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev > /dev/null
 
     - if: runner.os == 'Windows'
       shell: bash

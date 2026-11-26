@@ -16,3 +16,6 @@ dist/
 .nsh/
 app/.nsh/
 target/
+
+# Personal deploy config (account, admin, mail): npx wrangler deploy -c wrangler.local.jsonc
+wrangler.local.jsonc

@@ -3,14 +3,14 @@
  *
  * Layout by width, not by platform (allsum §6): at 900pt and wider a sidebar with the brand and the
  * sections, and a 46pt top bar led by the site switcher with the range, compare and account;
- * narrower, a compact top bar, the range across the width, and a bottom tab bar with "More" in a
- * sheet. Under the top bar, in both, the content area's page stack (./pages.tsx).
+ * narrower, a compact top bar (below the status bar on phones), the range across the width, and a
+ * bottom tab bar with "More" in a sheet. Under the top bar, in both, the content area's page stack (./pages.tsx).
  * Desktop windows hide the system title bar and the shell keeps clear of the window controls.
  */
 import type { Component, JSX } from "nsh";
 import { useNsMetry, useScreenTracking } from "nsmetry";
 import { nsmetry, startTelemetry } from "../telemetry";
-import { View, windowSize } from "nsh";
+import { safeAreaInsets, View, windowSize } from "nsh";
 import { currentWindow, isAvailable as hasWindow, titleBar } from "nsh/desktop";
 import { Head } from "nsh/web";
 import {
@@ -81,22 +81,32 @@ function WideTopBar() {
   );
 }
 
-/** The narrow layout's top: brand, site and account, then the range across the width. */
+/**
+ * The narrow layout's top. On a phone (no window of its own) it starts below the status bar and the
+ * Dynamic Island and keeps clear of the notch in landscape; the site being viewed leads it (the
+ * thing people switch most), the account trails, and the app's name is left to the home screen.
+ * Under it the range spans the width with Compare as an icon, so nothing wraps at 320pt.
+ * A narrow desktop window keeps its brand and clears the window controls.
+ */
 function NarrowTopBar() {
-  const left = () => (hasWindow ? titleBar().left : 0);
+  const insets = safeAreaInsets();
+  const left = () => (hasWindow ? titleBar().left : insets().left);
+  const right = () => (hasWindow ? 0 : insets().right);
   const top = () => (hasWindow ? titleBar().height : 0);
   return (
-    <View>
-      <View class="flex-row items-center gap-2 px-3" style={{ height: Math.max(size.topBar, top()), paddingLeft: space[3] + left() }}>
-        <Brand />
-        <View class="flex-1 items-end justify-center">
+    <View style={{ paddingTop: hasWindow ? 0 : insets().top }}>
+      <View class="flex-row items-center gap-2" style={{ height: Math.max(size.topBar, top()), paddingLeft: space[2] + left(), paddingRight: space[3] + right() }}>
+        <If when={hasWindow}>
+          <View class="pl-1"><Brand /></View>
+        </If>
+        <View class={`flex-1 justify-center ${hasWindow ? "items-end" : "items-start"}`}>
           <SiteSwitcher />
         </View>
         <BarItem><AccountMenu /></BarItem>
       </View>
-      <View class="flex-row items-center gap-2 px-3 pb-2">
+      <View class="flex-row items-center gap-1 pb-2" style={{ paddingLeft: space[3] + left(), paddingRight: space[2] + right() }}>
         <View class="flex-1 justify-center"><RangePicker stretch /></View>
-        <BarItem><CompareToggle /></BarItem>
+        <BarItem><CompareToggle icon /></BarItem>
       </View>
     </View>
   );

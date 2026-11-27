@@ -182,7 +182,7 @@ function MetricsCard(props: { metric: Metric; onMetric: (m: Metric) => void; sum
         <Divider />
         <View class="gap-2 px-4 pt-3 pb-3">
           <View class="flex-row items-center gap-3">
-            <View class="flex-1">
+            <View class="min-w-0 flex-1">
               <Heading size="lead">{meta().label}</Heading>
             </View>
             <If when={comparing() && s()}>

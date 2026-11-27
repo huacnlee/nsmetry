@@ -89,7 +89,7 @@ Collapsible reveal, Sheet) and plots at once under reduced motion.
 | `UnderlineTabs` | tabs.tsx | Leading icons, counts; 2pt underline springs between tabs |
 | `GroupSection` | tabs.tsx | Tinted rounded header, chevron, icon, name, muted count, actions; reveal |
 | `EmptyState`, `Skeleton` | surfaces.tsx | Icon, body, action (empty and error states); pulsing skeleton |
-| `Modal`, `BottomSheet`, `ConfirmDialog` | overlays.tsx | Dialogs fade with their backdrop; the bottom sheet (phones' "More") slides up, swipe closes |
+| `Modal`, `BottomSheet`, `ConfirmDialog` | overlays.tsx | Dialogs fade with their backdrop; on phones a form `Modal` is a bottom sheet that rides on the keyboard, its actions full width (primary on top), and a confirmation stays a centered dialog; the bottom sheet (phones' "More") slides up, swipe closes; both clear the home indicator |
 | `PageStack`, `StackPage`, `PageHeader` | stack.tsx | On `nsh/base` NavStack / NavPage: the content area's page stack. `PageHeader` is the desktop / web header of a pushed page (a 46pt bar on a hairline: ghost "‹ Section" back button, mono muted meta line, trailing actions, aligned to the content column); iOS and Android show their system header with its back button and swipe instead |
 | `toast`, `ToastHost` | overlays.tsx | info, ok, error; swipe away |
 | `BarRow` | list-row.tsx | Proportional fill bar; pressable (adds a filter) or static |
@@ -114,10 +114,12 @@ development builds. `app/gallery.test.tsx` checks it and, on a real target
 - 900pt and wider: sidebar (248pt, brand "NsMetry" top-left, Analytics and Instance groups) and a
   46pt top bar that is the title bar's own row (site switcher leading, then range, compare,
   account, all on one vertical center). Content max 1200pt, 24pt side padding.
-- Narrower: compact top bar (brand, site, account), the range across the width (`Segmented`
-  `layout="stretch"`), a bottom tab bar (Overview, Users, Pages, Sources as tabs; for an app,
-  Overview, Users, Events, Pages; "More" a button beside the tab list, so arrow keys never open its
-  sheet) with the rest in a bottom sheet.
+- Narrower: compact top bar (site, account; the brand only in a desktop window), below the status
+  bar and clear of the notch on phones, the range across the width (`Segmented` `layout="stretch"`)
+  with Compare as an icon beside it, the filter chips in one row that scrolls sideways, pull to
+  refresh on touch screens, and a bottom tab bar (Overview, Users, Pages, Sources as tabs; for an
+  app, Overview, Users, Events, Pages; "More" a button beside the tab list, so arrow keys never open
+  its sheet) with the rest in a bottom sheet.
 - An app (a site named without a dot, `isAppSite`) is read by its users: its Overview leads with
   active and new users and the daily chart, then screens, events, platforms, app versions and
   countries. Referrers, UTM tags, entry and exit pages, browsers, bounce rate and visit duration are

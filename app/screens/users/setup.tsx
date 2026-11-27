@@ -53,7 +53,7 @@ export function UserIdSetup(props: { testID?: string }) {
     <Card testID={props.testID} class="gap-4">
       <View class="flex-row items-start gap-3">
         <Glyph name="users" size={20} tone="faint" />
-        <View class="flex-1 gap-1">
+        <View class="min-w-0 flex-1 gap-1">
           <Heading size="lead">No user ids from {site()} yet</Heading>
           <Txt tone="muted">
             Active users and retention count installs, so they need a stable, anonymous id with each event. Send it as{" "}

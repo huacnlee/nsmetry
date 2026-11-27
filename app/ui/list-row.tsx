@@ -39,9 +39,9 @@ export function BarRow(props: {
           transitionTimingFunction: `cubic-bezier(${motion.settleCurve.join(",")})`,
         }}
       />
-      <View class="flex-1 flex-row items-center gap-2 px-2">
+      <View class="min-w-0 flex-1 flex-row items-center gap-2 px-2">
         {props.leading}
-        <View class="flex-1">
+        <View class="min-w-0 flex-1">
           <Txt size="table" truncate>{props.label}</Txt>
         </View>
       </View>

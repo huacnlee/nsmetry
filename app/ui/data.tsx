@@ -137,8 +137,8 @@ export function Timeline(props: { items: readonly TimelineItem[]; testID?: strin
               </If>
               <View class={`w-px flex-1 ${index() === props.items.length - 1 ? "bg-transparent" : "bg-border"}`} style={{ minHeight: 6 }} />
             </View>
-            <View class="flex-1 flex-row items-center gap-2 py-1.5">
-              <View class="flex-1 flex-row flex-wrap gap-1">
+            <View class="min-w-0 flex-1 flex-row items-center gap-2 py-1.5">
+              <View class="min-w-0 flex-1 flex-row flex-wrap gap-1">
                 <Txt weight="medium">{item().title}</Txt>
                 <If when={item().detail}><Txt tone="muted">{item().detail}</Txt></If>
               </View>
@@ -271,7 +271,7 @@ export function CodeBlock(props: { code: string; label?: string; testID?: string
   };
   return (
     <View testID={props.testID} class="flex-row items-start gap-2 rounded-(--radius-card) border border-border bg-sidebar py-2 pl-3 pr-1.5">
-      <View class="flex-1 py-1" selectable>
+      <View class="min-w-0 flex-1 py-1" selectable>
         <Txt class="font-mono" tone="soft">{props.code}</Txt>
       </View>
       <IconButton

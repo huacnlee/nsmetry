@@ -44,7 +44,7 @@ export function SiteChecklist(props: {
       </If>
       <If when={props.sites.length > 0} else={<Txt tone="muted">No sites yet. Add one from the site switcher first.</Txt>}>
         <View class="flex-row items-center gap-2">
-          <View class="flex-1">
+          <View class="min-w-0 flex-1">
             <Checkbox
               label={query().trim() ? "All shown" : "All sites"}
               checked={shown().length > 0 && onCount() === shown().length}

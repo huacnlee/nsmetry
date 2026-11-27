@@ -63,7 +63,7 @@ export function MenuRow(props: {
       style={{ minHeight: size.row }}
     >
       <If when={props.icon}>{(n) => <Glyph name={n()} size={size.iconSm} tone={props.danger ? "bad" : "muted"} />}</If>
-      <View class="flex-1">
+      <View class="min-w-0 flex-1">
         <Txt tone={props.danger ? "bad" : "default"} truncate>{props.label}</Txt>
       </View>
       <If when={props.hint}><Txt size="caption" tone="faint">{props.hint}</Txt></If>
@@ -156,8 +156,8 @@ export function Select<T extends string>(props: {
       groupClass="px-2 pt-2 pb-1"
       renderGroup={(g) => <Txt size="caption" tone="muted">{g.title}</Txt>}
       renderItem={(item) => (
-        <View class="flex-1 flex-row items-center gap-2">
-          <View class="flex-1"><Txt truncate>{item.title}</Txt></View>
+        <View class="min-w-0 flex-1 flex-row items-center gap-2">
+          <View class="min-w-0 flex-1"><Txt truncate>{item.title}</Txt></View>
           {/* The check follows the row's selected state (group-selected:), not a value read here. */}
           <View class="opacity-0 group-selected:opacity-100" style={{ width: size.icon }}>
             <Glyph name="check" size={size.iconSm} tone="brand" />

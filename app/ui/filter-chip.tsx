@@ -116,7 +116,7 @@ export function AddFilterChip(props: {
               class="flex-row items-center gap-2 rounded-(--radius) px-2 hover:bg-hover active:bg-pressed motion-reduce:transition-none"
               style={[interactiveTransition, { minHeight: size.row }]}
             >
-              <View class="flex-1"><Txt truncate>{o().label}</Txt></View>
+              <View class="min-w-0 flex-1"><Txt truncate>{o().label}</Txt></View>
               <If when={o().hint}><Txt size="caption" tone="faint" numeric>{o().hint}</Txt></If>
             </BaseButton>
           )}

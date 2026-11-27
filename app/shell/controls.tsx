@@ -2,7 +2,7 @@
  * The shell's controls, shared by the wide (sidebar) and narrow (tab bar) layouts: the site
  * switcher, the range picker, the compare toggle, the filter chips and the account menu.
  */
-import { appInfo, openUrl, signal, untracked, View } from "nsh";
+import { appInfo, openUrl, Scroll, signal, untracked, View } from "nsh";
 import { ApiError, type Dim, RANGES, type RangeId } from "../api";
 import { formatCount } from "../format";
 import { isAppSite } from "./nav";
@@ -40,6 +40,7 @@ import {
   Button,
   Field,
   FilterChip,
+  IconButton,
   MenuLabel,
   MenuRow,
   MenuSep,
@@ -47,8 +48,10 @@ import {
   NavButton,
   type PickOption,
   Segmented,
+  space,
   TextInput,
   toast,
+  touch,
   Txt,
 } from "../ui";
 
@@ -121,8 +124,8 @@ export function SiteSwitcher(props: { block?: boolean }) {
         description="A domain (example.com) or, for an app, a bare name (my-app)."
         actions={
           <>
-            <Button label="Cancel" variant="ghost" onPress={() => adding.set(false)} />
-            <Button label="Add site" variant="primary" busy={busy()} onPress={() => void submit()} testID="add-site-submit" />
+            <Button label="Cancel" variant="ghost" block={touch} onPress={() => adding.set(false)} />
+            <Button label="Add site" variant="primary" block={touch} busy={busy()} onPress={() => void submit()} testID="add-site-submit" />
           </>
         }
       >
@@ -150,8 +153,12 @@ export function RangePicker(props: { stretch?: boolean }) {
   );
 }
 
-/** Overlay the previous period on every chart and show deltas. */
-export function CompareToggle() {
+/** Overlay the previous period on every chart and show deltas. `icon`: the glyph alone (phones). */
+export function CompareToggle(props: { icon?: boolean }) {
+  const label = () => (comparing() ? "Comparing with the previous period" : "Compare with the previous period");
+  if (props.icon) {
+    return <IconButton testID="compare" icon="compare" label={label()} tone={comparing() ? "default" : "muted"} selected={comparing()} tooltip={false} onPress={toggleCompare} />;
+  }
   return (
     <Button
       testID="compare"
@@ -159,7 +166,7 @@ export function CompareToggle() {
       icon="compare"
       variant="ghost"
       selected={comparing()}
-      accessibilityLabel={comparing() ? "Comparing with the previous period" : "Compare with the previous period"}
+      accessibilityLabel={label()}
       onPress={toggleCompare}
     />
   );
@@ -208,13 +215,28 @@ export function AddFilter(props: { dim: Dim }) {
 
 /**
  * The shared filters: the applied ones as removable chips (`id:filters`, absent without filters),
- * then a "+ X" chip for each quick dimension not filtered yet. "Clear" removes them all.
+ * then a "+ X" chip for each quick dimension not filtered yet. "Clear" removes them all. `scroll`:
+ * one sideways-scrolling row (phones) instead of wrapping.
  */
-export function FilterBar() {
+export function FilterBar(props: { scroll?: boolean }) {
+  // Phones: one row that scrolls sideways (bleeding to the screen edges), not three rows of chips
+  // pushing the numbers down.
+  if (props.scroll) {
+    return (
+      <Scroll horizontal scrollbar={false} testID="filter-scroll" style={{ marginHorizontal: -space[4] }} contentStyle={{ paddingHorizontal: space[4] }}>
+        <FilterChips wrap={false} />
+      </Scroll>
+    );
+  }
+  return <FilterChips wrap />;
+}
+
+function FilterChips(props: { wrap: boolean }) {
+  const row = () => `flex-row items-center gap-1.5 ${props.wrap ? "flex-wrap" : ""}`;
   return (
-    <View class="flex-row flex-wrap items-center gap-1.5">
+    <View class={row()}>
       <If when={currentFilters().length > 0}>
-        <View class="flex-row flex-wrap items-center gap-1.5" testID="filters">
+        <View class={row()} testID="filters">
           <Each of={currentFilters()} key={(f) => `${f.dim}:${f.value}`}>
             {(f) => (
               <FilterChip

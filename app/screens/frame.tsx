@@ -18,7 +18,7 @@ export function ScreenFrame(props: {
   return (
     <View testID={props.testID} class="gap-4" style={m.style}>
       <View class="flex-row items-end gap-3">
-        <View class="flex-1 gap-0.5">
+        <View class="min-w-0 flex-1 gap-0.5">
           <Heading size="heading">{props.title}</Heading>
           <If when={props.description}><Txt tone="muted">{props.description}</Txt></If>
         </View>

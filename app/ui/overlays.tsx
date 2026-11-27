@@ -10,7 +10,7 @@
  *    over `fast` on the soft curve, leave over `instant`, swipe away, and go by themselves after 4s.
  */
 import type { JSX } from "nsh";
-import { Overlay, signal, View } from "nsh";
+import { Overlay, safeAreaInsets, signal, View } from "nsh";
 import { Dialog, Sheet, Toast, ToastStack } from "nsh/base";
 import { Button, ButtonRow } from "./button";
 import { Glyph } from "./icons";
@@ -28,6 +28,32 @@ export function Modal(props: {
   actions?: JSX.Element;
   testID?: string;
 }) {
+  // Phones: a form (anything but a confirmation) comes up from the bottom edge, in thumb reach; the
+  // sheet rides on the software keyboard, so a field and its actions stay above it.
+  if (touch && props.role !== "alertdialog") {
+    return (
+      <Sheet
+        open={props.open}
+        side="bottom"
+        closeOnSwipe
+        grabber
+        grabberClass="self-center my-2 h-1 w-9 rounded-(--radius-pill) bg-border-strong"
+        accessibilityLabel={props.title}
+        onOpenChange={(e) => !e.open && props.onClose()}
+        backdropClass="bg-scrim"
+        popupClass="rounded-t-(--radius-panel) bg-popover px-5 pb-[calc(env(safe-area-inset-bottom)+16px)]"
+      >
+        <View class="gap-4" testID={props.testID}>
+          <View class="gap-1">
+            <Heading size="title">{props.title}</Heading>
+            <If when={props.description}><Txt tone="muted">{props.description}</Txt></If>
+          </View>
+          {props.children}
+          <If when={props.actions}><View class="flex-col-reverse gap-2">{props.actions}</View></If>
+        </View>
+      </Sheet>
+    );
+  }
   return (
     <Dialog
       testID={props.testID}
@@ -70,7 +96,7 @@ export function BottomSheet(props: {
       accessibilityLabel={props.title}
       onOpenChange={(e) => !e.open && props.onClose()}
       backdropClass="bg-scrim"
-      popupClass="rounded-t-(--radius-panel) bg-popover px-2 pb-8"
+      popupClass="rounded-t-(--radius-panel) bg-popover px-2 pb-[calc(env(safe-area-inset-bottom)+8px)]"
     >
       <View class="px-3 pb-2" testID={props.testID}>
         <Heading size="title">{props.title}</Heading>
@@ -151,9 +177,11 @@ export function toast(title: string, options: { body?: string; tone?: ToastTone 
 export const currentToasts = () => toasts();
 
 export function ToastHost() {
+  // On a phone toasts sit above the tab bar and the home indicator, not over them.
+  const insets = safeAreaInsets();
   return (
-    <Overlay style={{ position: "absolute", left: 0, right: 0, bottom: touch ? 88 : 20, alignItems: "center" }}>
-      <ToastStack placement="bottomCenter" onCancel={() => { const last = toasts().at(-1); if (last) dismiss(last.id); }} style={{ width: touch ? 340 : 360 }}>
+    <Overlay style={{ position: "absolute", left: 0, right: 0, bottom: touch ? size.tabBar + insets().bottom + 12 : 20, alignItems: "center" }}>
+      <ToastStack placement="bottomCenter" onCancel={() => { const last = toasts().at(-1); if (last) dismiss(last.id); }} style={{ width: touch ? "92%" : 360, maxWidth: 420 }}>
         <Each of={toasts()} key={(t) => t.id}>
           {(t) => (
             <Toast
@@ -168,7 +196,7 @@ export function ToastHost() {
               style={[elevation.float(), { transitionProperty: "opacity, transform", transitionDuration: t().status === "ending" ? motion.duration.instant : motion.duration.fast, transitionTimingFunction: settleTiming }]}
             >
               <Glyph name={t().tone === "error" ? "error" : t().tone === "ok" ? "ok" : "info"} size={size.icon} tone={t().tone === "error" ? "bad" : t().tone === "ok" ? "ok" : "muted"} />
-              <View class="flex-1 gap-0.5">
+              <View class="min-w-0 flex-1 gap-0.5">
                 <Txt weight="medium">{t().title}</Txt>
                 <If when={t().body}><Txt size="caption" tone="muted">{t().body}</Txt></If>
               </View>

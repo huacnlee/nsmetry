@@ -22,7 +22,7 @@ export function VisitShare(props: { users: number; visitors: number | null }) {
   const share = () => (props.visitors && props.visitors > 0 ? Math.min(1, props.users / props.visitors) : null);
   return (
     <View class="min-w-0 flex-1 flex-row items-center gap-2">
-      <View class="flex-1">
+      <View class="min-w-0 flex-1">
         <ShareBar value={share() ?? 0} accessibilityLabel="Share of visits" />
       </View>
       <View class="items-end" style={{ width: width.valueColumn }}>

@@ -312,11 +312,18 @@ export function clearFilters() {
 export const canFilter = (dim: Dim) => dim !== "event" && dim !== "entry" && dim !== "exit" && filtersAllowed();
 export const filterFor = (dim: Dim) => filters().find((f) => f.dim === dim)?.value ?? null;
 
+const refreshes = signal(0);
+/** Load the current screens again (a pull to refresh on phones). */
+export function refresh() {
+  refreshes.set(refreshes() + 1);
+}
+
 /**
  * What every analytics request is scoped by, or null before a site is chosen. Screens pass it as a
  * `resource` source, so a change of site, range, comparison or filters reloads them.
  */
 export const scope = computed<Scope | null>(() => {
+  refreshes(); // a pull to refresh: a new scope object, so every screen loads again
   const site = siteId();
   if (site === null) return null;
   return { site, range: range(), filters: filters(), compare: compare() };

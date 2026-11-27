@@ -6,9 +6,9 @@
  */
 import { View } from "nsh";
 import { isAvailable as hasWindow, titleBar } from "nsh/desktop";
-import { currentSection, go, isOwner } from "../store";
+import { currentSection, currentSite, go, isOwner } from "../store";
 import { Glyph, NavItem, NavList, size, Txt } from "../ui";
-import { type NavItem as NavEntry, navItems } from "./nav";
+import { isAppSite, type NavItem as NavEntry, visibleNav } from "./nav";
 
 export function Brand() {
   return (
@@ -44,7 +44,7 @@ function NavGroup(props: { items: readonly NavEntry[]; label: string }) {
  * row's own 8pt inset, so their glyphs sit in one column.
  */
 export function Sidebar() {
-  const visible = () => navItems.filter((n) => !n.ownerOnly || isOwner());
+  const visible = () => visibleNav(isAppSite(currentSite()?.domain), isOwner());
   const top = () => (hasWindow ? titleBar().height : 0);
   return (
     <View class="border-r border-sidebar-border bg-sidebar px-2 pb-3" style={{ width: size.sidebar }}>

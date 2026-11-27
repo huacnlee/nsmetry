@@ -115,8 +115,13 @@ development builds. `app/gallery.test.tsx` checks it and, on a real target
   46pt top bar that is the title bar's own row (site switcher leading, then range, compare,
   account, all on one vertical center). Content max 1200pt, 24pt side padding.
 - Narrower: compact top bar (brand, site, account), the range across the width (`Segmented`
-  `layout="stretch"`), a bottom tab bar (Overview, Users, Pages, Sources as tabs; "More" a button
-  beside the tab list, so arrow keys never open its sheet) with the rest in a bottom sheet.
+  `layout="stretch"`), a bottom tab bar (Overview, Users, Pages, Sources as tabs; for an app,
+  Overview, Users, Events, Pages; "More" a button beside the tab list, so arrow keys never open its
+  sheet) with the rest in a bottom sheet.
+- An app (a site named without a dot, `isAppSite`) is read by its users: its Overview leads with
+  active and new users and the daily chart, then screens, events, platforms, app versions and
+  countries. Referrers, UTM tags, entry and exit pages, browsers, bounce rate and visit duration are
+  left out, and Sources is not in the navigation.
 - The sidebar's brand and sections (`NavItem`) share one left edge.
 - Data details open as pages on a NavStack (`openDetail`), never in a sheet.
 - Desktop windows hide the system title bar; the shell keeps clear of the window controls.

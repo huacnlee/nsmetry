@@ -6,21 +6,23 @@
  * of "More"'s, no tab is selected and "More" carries the wash and the section's name.
  */
 import { safeAreaInsets, signal, View } from "nsh";
-import { currentSection, go, isOwner, type Section } from "../store";
+import { currentSection, currentSite, go, isOwner, type Section } from "../store";
 import { BottomSheet, SheetNavRow, size, TabBarButton, TabBarItem, TabBarList } from "../ui";
-import { labelOf, navItems, tabBarItems } from "./nav";
+import { isAppSite, labelOf, navItems, tabBarItemsFor, visibleNav } from "./nav";
 
 export function TabBar() {
   const more = signal(false);
   const insets = safeAreaInsets();
-  const inMore = () => !tabBarItems.includes(currentSection());
-  const rest = () => navItems.filter((n) => !tabBarItems.includes(n.id) && (!n.ownerOnly || isOwner()));
+  const app = () => isAppSite(currentSite()?.domain);
+  const tabBarItems = () => tabBarItemsFor(app());
+  const inMore = () => !tabBarItems().includes(currentSection());
+  const rest = () => visibleNav(app(), isOwner()).filter((n) => !tabBarItems().includes(n.id));
   const icon = (id: Section) => navItems.find((n) => n.id === id)?.icon ?? "overview";
   return (
     <View class="border-t border-border bg-background" style={{ paddingBottom: insets().bottom }}>
       <View class="flex-row" style={{ height: size.tabBar }}>
         <TabBarList accessibilityLabel="Sections">
-          <Each of={tabBarItems}>
+          <Each of={tabBarItems()}>
             {(id) => (
               <TabBarItem
                 testID={`tab-${id()}`}

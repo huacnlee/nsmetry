@@ -13,7 +13,7 @@ import { ApiError, type PublicUser } from "../api";
 import { api, closeDetail, currentServer, currentUser, isOwner, openDetail, siteList } from "../store";
 import {
   Avatar, Button, Card, ConfirmDialog, DataTable, EmptyState, Field, Heading, Modal, PropertyList,
-  Skeleton, Tag, TextInput, toast, Txt,
+  Skeleton, Tag, TextInput, toast, touch, Txt,
 } from "../ui";
 import { ScreenFrame } from "./frame";
 import { SiteChecklist } from "./settings/site-checklist";
@@ -63,8 +63,8 @@ function InviteDialog(props: { open: boolean; onClose: () => void; onInvited: (u
       description="They sign in with a code sent to this address and read only the sites you pick."
       actions={
         <>
-          <Button label="Cancel" variant="ghost" onPress={close} />
-          <Button label="Invite" variant="primary" busy={busy()} disabled={!email().trim()} onPress={() => void submit()} testID="invite-submit" />
+          <Button label="Cancel" variant="ghost" block={touch} onPress={close} />
+          <Button label="Invite" variant="primary" block={touch} busy={busy()} disabled={!email().trim()} onPress={() => void submit()} testID="invite-submit" />
         </>
       }
     >

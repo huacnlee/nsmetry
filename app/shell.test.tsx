@@ -62,3 +62,17 @@ test("the wide top bar's controls share one vertical center", async () => {
   for (const c of centers) expect(Math.abs(c - centers[0])).toBeLessThanOrEqual(0.5);
   app.dispose();
 });
+
+test("on a phone the filters are one sideways row and Compare is an icon beside the range", async () => {
+  const app = await open("./App.tsx", { width: 320, height: 640, platform: "ios", network, storage });
+  await app.waitFor("id:filter-scroll");
+  const range = app.layout("id:range")!;
+  const compare = app.layout("id:compare")!;
+  expect(compare.x).toBeGreaterThanOrEqual(range.x + range.width); // same row, after the range
+  expect(compare.x + compare.width).toBeLessThanOrEqual(320);
+  expect(Math.abs(compare.y + compare.height / 2 - (range.y + range.height / 2))).toBeLessThanOrEqual(1);
+  // Every "+ X" chip sits on one line, whatever the width.
+  const tops = ["path", "referrer", "country"].map((d) => app.layout(`id:add-filter-${d}`)!.y);
+  for (const t of tops) expect(t).toBe(tops[0]);
+  app.dispose();
+});

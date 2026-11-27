@@ -7,16 +7,29 @@
  * stays open when the window crosses 900pt. The store resets the stack on a section or site change.
  */
 import type { Component, JSX } from "nsh";
-import { computed, Scroll, View } from "nsh";
-import { closeDetail, currentSection, currentSiteId, type DetailPage, isOwner, pageStack, type Section } from "../store";
-import { EmptyState, Heading, PageHeader, pageInset, PageStack, space, StackPage, systemHeader, Txt, width } from "../ui";
+import { computed, Scroll, signal, View } from "nsh";
+import { closeDetail, currentSection, currentSiteId, type DetailPage, isOwner, pageStack, refresh, type Section } from "../store";
+import { EmptyState, Heading, PageHeader, pageInset, PageStack, space, StackPage, systemHeader, touch, Txt, width } from "../ui";
 import { FilterBar, openAddSite } from "./controls";
 import { labelOf } from "./nav";
 
 /** A page's scroll: the filter bar, then the page, in the content column of the layout. */
 function PageScroll(props: { wide: boolean; children?: JSX.Element }) {
+  // Pull to refresh where there is no reload button to press (phones); dragging lowers the keyboard.
+  const refreshing = signal(false);
+  const pull = () => {
+    refreshing.set(true);
+    refresh();
+    setTimeout(() => refreshing.set(false), 600);
+  };
   return (
-    <Scroll class="flex-1" contentClass="items-center">
+    <Scroll
+      class="flex-1"
+      contentClass="items-center"
+      keyboardDismissMode="on-drag"
+      refreshing={touch ? refreshing() : undefined}
+      onRefresh={touch ? pull : undefined}
+    >
       <View
         class="w-full gap-4"
         style={{
@@ -26,7 +39,7 @@ function PageScroll(props: { wide: boolean; children?: JSX.Element }) {
           paddingBottom: props.wide ? space[5] : space[6],
         }}
       >
-        <FilterBar />
+        <FilterBar scroll={!props.wide} />
         {props.children}
       </View>
     </Scroll>

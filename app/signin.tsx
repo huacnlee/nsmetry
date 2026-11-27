@@ -169,7 +169,7 @@ function CodeStep(props: {
       <Field label="Code" error={props.error}>
         <If
           when={props.digits}
-          fallback={<TextInput testID="code" value={props.code} onChange={props.onCode} onSubmit={props.onVerify} placeholder="ABCD-EFGH" keyboard="default" plain autoComplete="one-time-code" autoFocus invalid={!!props.error} />}
+          else={<TextInput testID="code" value={props.code} onChange={props.onCode} onSubmit={props.onVerify} placeholder="ABCD-EFGH" keyboard="default" plain autoComplete="one-time-code" autoFocus invalid={!!props.error} />}
         >
           {(n) => <CodeInput testID="code" length={n()} value={props.code} onChange={props.onCode} onComplete={props.onVerify} invalid={!!props.error} autoFocus />}
         </If>

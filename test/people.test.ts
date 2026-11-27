@@ -17,7 +17,7 @@ import { createUser, ensureAdminAccount } from '../src/users';
 const db = env.DB;
 const workerEnv = env as unknown as Env;
 const BASE = 'https://analytics.example.com';
-const UA = 'Noop/1.0 (Macintosh; macOS 26.0)';
+const UA = 'MyApp/1.0 (Macintosh; macOS 26.0)';
 
 function at(iso: string): void {
   vi.setSystemTime(new Date(iso));
@@ -75,7 +75,7 @@ beforeEach(async () => {
     await db.prepare(`DELETE FROM ${table}`).run();
   }
   await db.batch([
-    db.prepare("INSERT INTO sites (id, domain, created_at) VALUES (1, 'noop', 0)"),
+    db.prepare("INSERT INTO sites (id, domain, created_at) VALUES (1, 'myapp', 0)"),
     db.prepare("INSERT INTO sites (id, domain, created_at) VALUES (2, 'other-app', 0)"),
   ]);
   clearSiteCache();
@@ -87,9 +87,9 @@ afterEach(() => {
 
 describe('ingest', () => {
   it('stores no user id while the setting is off (the default)', async () => {
-    expect((await send({ site: 'noop', name: 'screen_view', path: '/', user_id: 'jane@example.com' })).status).toBe(204);
+    expect((await send({ site: 'myapp', name: 'screen_view', path: '/', user_id: 'jane@example.com' })).status).toBe(204);
     expect(
-      (await sendBatch({ site: 'noop', events: [{ name: 'screen_view', path: '/', user_id: 'joe@example.com' }] })).status,
+      (await sendBatch({ site: 'myapp', events: [{ name: 'screen_view', path: '/', user_id: 'joe@example.com' }] })).status,
     ).toBe(204);
     expect(await identities()).toEqual([]);
   });
@@ -99,10 +99,10 @@ describe('ingest', () => {
     clearSiteCache();
 
     const batch = (userIds: string[]) =>
-      sendBatch({ site: 'noop', events: userIds.map((user_id) => ({ name: 'screen_view', path: '/', user_id })) });
+      sendBatch({ site: 'myapp', events: userIds.map((user_id) => ({ name: 'screen_view', path: '/', user_id })) });
     expect((await batch(['jane@example.com', 'jane@example.com', 'joe@example.com'])).status).toBe(204);
     // Events without a user id and other sites are left alone.
-    await send({ site: 'noop', name: 'screen_view', path: '/' });
+    await send({ site: 'myapp', name: 'screen_view', path: '/' });
     await send({ site: 'other-app', name: 'screen_view', path: '/', user_id: 'jane@example.com' });
 
     const first = ts('2026-03-10T12:00:00Z');
@@ -118,7 +118,7 @@ describe('ingest', () => {
 
     // Past it: last_seen moves, first_seen stays.
     at('2026-03-10T13:30:01Z');
-    await send({ site: 'noop', name: 'screen_view', path: '/', user_id: 'jane@example.com' });
+    await send({ site: 'myapp', name: 'screen_view', path: '/', user_id: 'jane@example.com' });
     expect((await identities())[0]).toEqual({
       site_id: 1,
       user_id: 'jane@example.com',
@@ -130,13 +130,13 @@ describe('ingest', () => {
   it('keeps nothing once turned off, even from an isolate whose cache still says on', async () => {
     const token = await ownerToken();
     expect((await api('PUT', '/api/sites/1/keep-user-ids', token, { enabled: true })).status).toBe(200);
-    await send({ site: 'noop', name: 'screen_view', path: '/', user_id: 'jane@example.com' });
+    await send({ site: 'myapp', name: 'screen_view', path: '/', user_id: 'jane@example.com' });
     expect(await identities()).toHaveLength(1);
 
     // Prime the cache with "on", then turn it off behind its back.
     await db.prepare('UPDATE sites SET keep_user_ids = 0 WHERE id = 1').run();
     await db.prepare('DELETE FROM app_identities').run();
-    await send({ site: 'noop', name: 'screen_view', path: '/', user_id: 'joe@example.com' });
+    await send({ site: 'myapp', name: 'screen_view', path: '/', user_id: 'joe@example.com' });
     expect(await identities()).toEqual([]);
   });
 });
@@ -156,12 +156,12 @@ describe('routes', () => {
     const sites = (await (await api('GET', '/api/sites', token)).json()) as { sites: { id: number; keep_user_ids: number }[] };
     expect(sites.sites.find((s) => s.id === 1)!.keep_user_ids).toBe(1);
 
-    await send({ site: 'noop', name: 'screen_view', path: '/', user_id: 'jane@example.com' });
+    await send({ site: 'myapp', name: 'screen_view', path: '/', user_id: 'jane@example.com' });
     expect(await identities()).toHaveLength(1);
 
     expect((await api('PUT', '/api/sites/1/keep-user-ids', token, { enabled: false })).status).toBe(200);
     expect(await identities()).toEqual([]);
-    await send({ site: 'noop', name: 'screen_view', path: '/', user_id: 'jane@example.com' });
+    await send({ site: 'myapp', name: 'screen_view', path: '/', user_id: 'jane@example.com' });
     expect(await identities()).toEqual([]);
   });
 
@@ -172,11 +172,11 @@ describe('routes', () => {
 
     await api('PUT', '/api/sites/1/keep-user-ids', token, { enabled: true });
     at('2026-02-01T08:00:00Z');
-    await send({ site: 'noop', name: 'screen_view', path: '/', user_id: 'gone@example.com' });
+    await send({ site: 'myapp', name: 'screen_view', path: '/', user_id: 'gone@example.com' });
     at('2026-03-09T08:00:00Z');
-    await send({ site: 'noop', name: 'screen_view', path: '/', user_id: 'joe@example.com' });
+    await send({ site: 'myapp', name: 'screen_view', path: '/', user_id: 'joe@example.com' });
     at('2026-03-10T12:00:00Z');
-    await send({ site: 'noop', name: 'screen_view', path: '/', user_id: 'jane@example.com' });
+    await send({ site: 'myapp', name: 'screen_view', path: '/', user_id: 'jane@example.com' });
 
     const body = (await (await api('GET', '/api/people?site=1&days=30', token)).json()) as {
       enabled: boolean;

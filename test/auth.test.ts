@@ -66,6 +66,8 @@ async function requestCode(email: string): Promise<string> {
   expect(response.status).toBe(200);
   const body = (await response.json()) as { ok: boolean; delivery: string; message?: string };
   expect(body).toMatchObject({ ok: true, delivery: 'log' });
+  // Apps 0.1.2 and 0.1.3 show digit-only cells when this is present: without it they use their text field.
+  expect(body).not.toHaveProperty('codeDigits');
   expect(body.message).toMatch(/wrangler tail/);
 
   const line = log.mock.calls.map((args) => String(args[0])).find((l) => l.includes('sign-in-code'));
@@ -73,6 +75,7 @@ async function requestCode(email: string): Promise<string> {
   if (!line) throw new Error('no sign-in code was logged');
   const parsed = JSON.parse(line) as { to: string; code: string };
   expect(parsed.to).toBe(email);
+  expect(parsed.code).toMatch(/^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{8}$/);
   return parsed.code;
 }
 

@@ -48,19 +48,21 @@ export function TextInput(props: {
 }
 
 /**
- * A one-time code of `length` digits (NSH's `OtpInput`): one cell per digit in two groups, the text
+ * A one-time code of `length` characters (NSH's `OtpInput`): one cell per character in two groups, the text
  * field's border and focus color on each cell, the muted fill on the filled ones. Typing, paste and
  * the system's code autofill are the platform field's; `onComplete` fires when the last cell fills.
  * The cells share the row (`flex-1`), so eight of them fit a phone-wide card.
  */
 export function CodeInput(props: {
   length: number;
+  /** Letters and digits (letters shown upper-case, the full keyboard) or digits only (the number pad). Default letters and digits. */
+  characters?: "alphanumeric" | "numeric";
   value: string;
   onChange: (value: string) => void;
   onComplete?: (value: string) => void;
   invalid?: boolean;
   disabled?: boolean;
-  /** Take the keyboard focus (and a phone's number pad) once shown. */
+  /** Take the keyboard focus (and a phone's keyboard) once shown. */
   autoFocus?: boolean;
   accessibilityLabel?: string;
   testID?: string;
@@ -72,10 +74,11 @@ export function CodeInput(props: {
       }}
       testID={props.testID}
       length={props.length}
+      validationType={props.characters ?? "alphanumeric"}
       groups={2}
       value={props.value}
       disabled={props.disabled}
-      accessibilityLabel={props.accessibilityLabel ?? `Sign-in code, ${props.length} digits`}
+      accessibilityLabel={props.accessibilityLabel ?? `Sign-in code, ${props.length} ${props.characters === "numeric" ? "digits" : "characters"}`}
       onChange={(e) => props.onChange(e.value)}
       onComplete={(e) => props.onComplete?.(e.value)}
       class="flex-row gap-3"

@@ -591,7 +591,7 @@ export function createDemoServer(opts: { now?: () => number } = {}): Transport {
     switch (route) {
       case "POST /api/auth/start":
         if (typeof body.email !== "string" || !body.email.includes("@")) return fail(400, "a valid email is required");
-        return ok({ ok: true, delivery: "email", message: "This is the demo: any code signs you in." });
+        return ok({ ok: true, delivery: "email", codeDigits: 8, message: "This is the demo: any code signs you in." });
       case "POST /api/auth/verify":
         return ok({ token: "demo", user: withSites(me()) });
       case "POST /api/auth/logout":

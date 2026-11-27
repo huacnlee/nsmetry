@@ -14,12 +14,13 @@ Signing in is a code sent by email:
 
 | Request | Body | Response |
 | --- | --- | --- |
-| `POST /api/auth/start` | `{ "email" }` | `{ "ok": true, "delivery": "smtp" \| "email" \| "log", "message"? }`. `403` if the email is neither the admin nor invited, `429` when rate-limited, `502` if the mail could not be sent, `503` until `ADMIN_EMAIL` is set. With `"delivery": "log"` no mail transport is configured and the code is in the Worker logs; `message` says where, for the app to show. |
+| `POST /api/auth/start` | `{ "email" }` | `{ "ok": true, "delivery": "smtp" \| "email" \| "log", "codeDigits": 8, "message"? }`. `403` if the email is neither the admin nor invited, `429` when rate-limited, `502` if the mail could not be sent, `503` until `ADMIN_EMAIL` is set. With `"delivery": "log"` no mail transport is configured and the code is in the Worker logs; `message` says where, for the app to show. |
 | `POST /api/auth/verify` | `{ "email", "code" }` | `{ "token", "user": PublicUser }`. `401` for a wrong, spent or expired code (five tries per code), `429` once sign-in is locked for the UTC day. |
 | `POST /api/auth/logout` | – (bearer) | `{ "ok": true }`, revokes that token |
 
-Codes are 8 characters from `ABCDEFGHJKMNPQRSTUVWXYZ23456789`, valid for 10
-minutes; case, spaces and dashes are ignored. A new code for an address needs
+Codes are 8 digits (`codeDigits` in the `start` response), valid for 10
+minutes; spaces and dashes are ignored. Servers before 0.1.2 sent 8
+characters from `ABCDEFGHJKMNPQRSTUVWXYZ23456789` and no `codeDigits`. A new code for an address needs
 a minute's wait, the instance mails at most 20 per hour, and after 20 wrong
 codes in a UTC day nobody can verify until midnight UTC.
 

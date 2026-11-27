@@ -146,14 +146,14 @@ export function signInPage(view: SignInView): string {
   return layout(
     'Enter your code',
     `<h1>Check your email</h1>
-  <p>${escapeHtml(view.notice ?? `We sent an 8-character code to ${view.email ?? 'your address'}. It is valid for 10 minutes.`)}</p>
+  <p>${escapeHtml(view.notice ?? `We sent an 8-digit code to ${view.email ?? 'your address'}. It is valid for 10 minutes.`)}</p>
   ${intro}
   ${errorBlock(view.error)}
   <form method="post" action="${escapeHtml(view.action)}">
     ${fields}
     <input type="hidden" name="email" value="${escapeHtml(view.email ?? '')}">
     <label>Code
-      <input class="code" name="code" inputmode="text" autocomplete="one-time-code" required autofocus
+      <input class="code" name="code" inputmode="numeric" autocomplete="one-time-code" required autofocus
         minlength="8" maxlength="12" spellcheck="false"></label>
     <button type="submit">Sign in</button>
   </form>`,

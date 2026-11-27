@@ -589,6 +589,23 @@ const SCHEMA: string[] = [
      PRIMARY KEY (site_id, uid)
    ) WITHOUT ROWID`,
 
+  // The people behind the uids, for sites whose owner turned on "Keep user
+  // ids" (sites.keep_user_ids). Off by default, and the only place a raw
+  // user_id is ever stored: everything else counts the uid pseudonym.
+  // Turning it off deletes the site's rows.
+  //
+  // Written at most once an hour per person: ingest upserts with
+  // `WHERE last_seen < excluded.last_seen - 3600`, and an upsert whose WHERE
+  // fails writes no row, so steady traffic costs a primary-key probe only.
+  `CREATE TABLE IF NOT EXISTS app_identities (
+     site_id INTEGER NOT NULL,
+     uid TEXT NOT NULL,
+     user_id TEXT NOT NULL,
+     first_seen INTEGER NOT NULL,
+     last_seen INTEGER NOT NULL,
+     PRIMARY KEY (site_id, uid)
+   ) WITHOUT ROWID`,
+
   // ---- access-track tables: sign-in codes, bearer sessions, OAuth ----
 
   // One pending emailed sign-in code per address (see src/auth.ts). Only the
@@ -749,6 +766,8 @@ const ADDED_COLUMNS: ReadonlyArray<string> = [
   // Precomputed retention and distinct-user sketches; see app_daily.
   "ALTER TABLE app_daily ADD COLUMN ret TEXT NOT NULL DEFAULT '{}'",
   "ALTER TABLE app_daily ADD COLUMN hll TEXT NOT NULL DEFAULT ''",
+  // 1 when the site's owner chose to keep raw user ids (app_identities).
+  'ALTER TABLE sites ADD COLUMN keep_user_ids INTEGER NOT NULL DEFAULT 0',
 ];
 
 /**

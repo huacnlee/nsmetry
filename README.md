@@ -167,7 +167,10 @@ lists.
   ```
 
 Send a `user_id`, a random id made once per install, to get active users and
-retention. [docs/sdk.md](docs/sdk.md) has the batching rules that keep you
+retention. It is hashed per site and the raw value is not stored, unless the
+site's owner turns on **Settings › People › Keep user ids** to list the people
+behind the ids (with first and last seen) under **Users**; turning it off
+deletes them. [docs/sdk.md](docs/sdk.md) has the batching rules that keep you
 inside the free plan and clients in Swift and Kotlin;
 [docs/api.md](docs/api.md) is the full API.
 
@@ -256,7 +259,9 @@ No cookies and no `localStorage` on your websites. A web visitor is a hash of a
 daily random salt, the site, the IP address and the user agent; the salt is
 deleted two days later, the IP address is never stored, raw events are dropped
 within 24 to 48 hours, and only the referrer's hostname is kept. App install ids
-are stored as a per-site hash. The tracker and the SDKs talk only to your
+are stored as a per-site hash. The raw `user_id` is kept only for a site whose
+owner turns on **Keep user ids** (off by default; turning it off deletes them),
+to list who uses their own app. The tracker and the SDKs talk only to your
 instance, and the only request the instance makes is the daily update check.
 This is designed to need no consent banner under GDPR, but it is not legal
 advice.

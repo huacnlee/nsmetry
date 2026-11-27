@@ -73,6 +73,7 @@ dimension).
 - `GET /api/sites` → `{ sites: Site[] }`, the sites this user can read
 - `POST /api/sites` `{ domain }` → `{ site: Site }` (owner). A domain (`example.com`) or a bare name (`my-app`). Adding an existing one returns it.
 - `DELETE /api/sites/:id` → `{ ok: true }` (owner)
+- `PUT /api/sites/:id/keep-user-ids` `{ enabled: boolean }` → `{ enabled }` (owner). Keep the raw `user_id`s the site sends, for `/api/people`. Off by default; turning it off deletes every id kept for the site. `Site.keep_user_ids` is `1` while it is on.
 
 ## People (owner only)
 
@@ -114,11 +115,13 @@ upper bound), and visits are counted at their entry page.
 
 Sites that send a `user_id` (a stable, anonymous install id) get active-user
 and retention numbers on top of everything above. The id is hashed with a
-per-site secret before it is stored; the raw value never reaches the database.
+per-site secret before it is stored; the raw value never reaches the database,
+unless the site's owner turns on **Keep user ids** (below).
 
 - `GET /api/active-users?site&range` → `{ tracked: boolean, labels: string[], dau: number[], new: number[], totals: { active: number, new: number }, wau: number, mau: number }` — `tracked` is false when the site has never sent a `user_id`
   `dau`, `new` and `totals.new` are exact. On days the fold owns, `wau`, `mau` and `totals.active` are the union of the days' user sets, exact (a block with more than 100,000 users keeps a HyperLogLog sketch instead, about 1.6% error); a window reaching days before the cutover is merged from the older daily sketches, with that error.
 - `GET /api/retention?site&cohort=day|week&periods=8` → `{ tracked, cohorts: { label, size, retained: number[] }[] }` — `retained[i]` is how many of the cohort were active `i` periods after their first one (`retained[0] === size`)
+- `GET /api/people?site&days=30&limit=500` → `{ enabled: boolean, days, people: { user_id, first_seen, last_seen }[], total }` — the people seen in the last `days` days (1–365), newest `last_seen` first, at most `limit` (≤ 500); `total` counts them all. Times are unix seconds; `last_seen` is updated at most once an hour. Only for a site whose owner turned on **Keep user ids** (`PUT /api/sites/:id/keep-user-ids`); otherwise `enabled: false` and the list is empty. It is the only place a raw `user_id` is stored: active users and retention still count the hashed id.
 - `GET /api/events?site&range&f=` → `{ events: { name, count, users }[] }` — custom events (everything except page/screen views)
   `users` is distinct users per day, summed over the range. Unfiltered it is exact per day (today from its state, finished days from their blocks). Filtered, it comes from the filter cube, where users are distinct per combination of dimensions, so the number is an upper bound.
 - `GET /api/event-properties?site&range&event=<name>` → `{ keys: { key, count }[] }`
@@ -146,7 +149,7 @@ path). Body, JSON:
 | `referrer` | `r` | Referrer URL; only its host is kept |
 | `screen_width` | `w` | Screen width in px; bucketed, never stored exactly |
 | `ua` | `user_agent` | Overrides the User-Agent header (native apps) |
-| `user_id` | `uid` | Stable anonymous install/user id. Enables active users and retention; hashed per site, never stored raw |
+| `user_id` | `uid` | Stable anonymous install/user id. Enables active users and retention; hashed per site, stored raw only when the site's owner turns on Keep user ids |
 | `app_version` | `v` | App version, e.g. `2.3.1` |
 | `props` | `p` | Flat object of event properties: ≤ 10 keys, string/number/boolean values (≤ 100 chars) |
 
@@ -163,7 +166,7 @@ Answers `204`, `400` for a malformed body, `404` for an unknown site.
 `/.well-known/oauth-authorization-server`, `/oauth/register`, `/oauth/authorize`,
 `/oauth/token`, `/oauth/revoke`). Sign-in on the authorize page is the same email code.
 Tools: `list_sites`, `get_summary`, `get_breakdown`, `get_timeseries`, `get_realtime`, and for apps
-`get_active_users`, `get_retention`, `get_events`, `get_event_properties`, `get_event_series` (the App analytics endpoints above).
+`get_active_users`, `get_retention`, `get_people`, `get_events`, `get_event_properties`, `get_event_series` (the App analytics endpoints above).
 
 - Stateless: each POST carries one JSON-RPC message and gets one JSON answer (no SSE, no
   `Mcp-Session-Id`); notifications get `202`; `GET /mcp` is `405`. Protocol versions

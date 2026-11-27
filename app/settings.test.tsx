@@ -2,7 +2,7 @@
  * Settings, headless against a fake instance: the install tabs are prefilled with this server and
  * the site key (a domain opens on Website, a bare name on Not sure), copy puts the prompt on the
  * clipboard, the admin's script URL override is saved and refused in the server's words, removing a
- * site asks first, and a viewer sees neither admin control.
+ * site asks first, keeping user ids saves on and asks before off, and a viewer sees no admin control.
  */
 import { describe, expect, open, test, type StubRequest, type StubResponse } from "nsh/test";
 
@@ -135,6 +135,30 @@ describe("admin", () => {
     a.dispose();
   });
 
+  test("keep user ids: on saves at once, off asks first and deletes", async () => {
+    let keep = 0;
+    const a = await openSettings(owner, 8, {
+      [`GET ${S}/api/sites`]: () => ({ body: { sites: [web, { ...app, keep_user_ids: keep }] } }),
+      [`PUT ${S}/api/sites/8/keep-user-ids`]: (r) => {
+        keep = JSON.parse(r.body ?? "{}").enabled ? 1 : 0;
+        return { body: { enabled: keep === 1 } };
+      },
+    });
+    await a.waitFor("id:keep-user-ids");
+    expect(hasText(a.texts(), "Stores the raw user_id")).toBe(true);
+    await a.press("id:keep-user-ids");
+    await a.waitUntil(() => keep === 1);
+    await a.waitUntil(() => a.requests().filter((r) => r.url === `${S}/api/sites`).length >= 2);
+
+    await a.press("id:keep-user-ids");
+    await a.waitFor("id:keep-user-ids-dialog-confirm");
+    expect(hasText(a.texts(), "Every user id kept for disktree is deleted.")).toBe(true);
+    expect(keep).toBe(1);
+    await a.press("id:keep-user-ids-dialog-confirm");
+    await a.waitUntil(() => keep === 0);
+    a.dispose();
+  });
+
   test("an update out is shown", async () => {
     const a = await openSettings();
     await a.waitFor("id:update-available");
@@ -149,6 +173,7 @@ describe("viewer", () => {
     await a.waitFor("id:install-website");
     expect(a.shows("id:tracker-url")).toBe(false);
     expect(a.shows("id:remove-site")).toBe(false);
+    expect(a.shows("id:keep-user-ids")).toBe(false);
     expect(hasText(a.texts(), "Viewer")).toBe(true);
     a.dispose();
   });

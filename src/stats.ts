@@ -50,6 +50,8 @@ export interface SiteRow {
   id: number;
   domain: string;
   created_at: number;
+  /** 1 when the site keeps raw user ids (see src/people.ts); only /api/sites reads it. */
+  keep_user_ids?: number;
 }
 
 export async function listSites(db: D1Database): Promise<SiteRow[]> {

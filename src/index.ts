@@ -6,6 +6,7 @@ import { SETTING_FOLD_SECRET, ensureSchema, getSetting, setSetting } from './db'
 import { FAVICON_SVG } from './favicon';
 import { clearSiteCache, corsPreflight, handleBatchIngest, handleIngest } from './ingest';
 import { loadActiveUsers, loadEventProperties, loadEvents, loadRetention } from './app-analytics';
+import { MAX_PEOPLE, loadPeople, parseDays, setKeepUserIds } from './people';
 // The reports themselves live in src/reports.ts (shared with the MCP tools);
 // these two are kept for routes that parse a range or filters of their own.
 import { filterSpanError, loadEventSeries, parseFilters, resolveRange } from './query';
@@ -357,6 +358,31 @@ app.delete('/api/sites/:id', async (c) => {
   return c.json({ ok: true });
 });
 
+/**
+ * Admin: keep (or stop keeping) the raw user ids an app sends, for the People
+ * list. Off deletes the ids already kept. Every isolate's ingest cache rereads
+ * sites_gen within a minute, and ingest re-checks the flag as it writes, so
+ * nothing is kept after "off" returns.
+ */
+app.put('/api/sites/:id/keep-user-ids', async (c) => {
+  if (!isOwner(c.get('user'))) return c.json(OWNER_ONLY, 403);
+
+  const id = Number.parseInt(c.req.param('id'), 10);
+  if (!Number.isInteger(id)) return c.json({ error: 'invalid id' }, 400);
+  const body = await jsonBody(c);
+  if (typeof body.enabled !== 'boolean') return c.json({ error: 'enabled must be true or false' }, 400);
+
+  const exists = await c.env.DB.prepare('SELECT 1 AS ok FROM sites WHERE id = ?').bind(id).first();
+  if (!exists) return c.json({ error: 'no such site' }, 404);
+  await setKeepUserIds(c.env.DB, id, body.enabled);
+  await c.env.DB.prepare(
+    `INSERT INTO settings (key, value) VALUES ('sites_gen', '1')
+     ON CONFLICT(key) DO UPDATE SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT)`,
+  ).run();
+  clearSiteCache();
+  return c.json({ enabled: body.enabled });
+});
+
 /* ---------------------------------------------------------------- people -- */
 
 /** The account named by `:id`, with its role derived, or null. */
@@ -627,6 +653,17 @@ app.get('/api/event-series', async (c) => {
   const spanError = filterSpanError(range.from, range.to, filters);
   if (spanError) return c.json({ error: spanError }, 400);
   return c.json(await loadEventSeries(c.env.DB, site.id, range, event, filters, now), 200, NO_STORE);
+});
+
+/** The people behind an app's user ids, for a site that keeps them (src/people.ts). */
+app.get('/api/people', async (c) => {
+  const site = await resolveSite(c);
+  if (site instanceof Response) return site;
+  const days = parseDays(c.req.query('days'));
+  if (days === null) return c.json({ error: 'days must be 1 to 365' }, 400);
+  const parsed = Number.parseInt(c.req.query('limit') ?? '', 10);
+  const limit = Number.isInteger(parsed) ? parsed : MAX_PEOPLE;
+  return c.json(await loadPeople(c.env.DB, site.id, days, limit, Math.floor(Date.now() / 1000)), 200, NO_STORE);
 });
 
 app.get('/api/realtime', async (c) => {

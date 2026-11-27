@@ -27,6 +27,21 @@ export interface Site {
   /** A domain (`example.com`) or a bare name (`my-app`). */
   domain: string;
   created_at: number;
+  /** 1 when the site keeps the raw user ids its app sends (the People list). */
+  keep_user_ids?: number;
+}
+/** Someone an app reported, by the user id it sent: unix seconds. */
+export interface Person {
+  user_id: string;
+  first_seen: number;
+  last_seen: number;
+}
+export interface People {
+  /** Whether the site keeps user ids; when false the list is empty. */
+  enabled: boolean;
+  days: number;
+  people: Person[];
+  total: number;
 }
 export type RangeId = "today" | "7d" | "30d" | "90d" | "12mo";
 export const RANGES: readonly RangeId[] = ["today", "7d", "30d", "90d", "12mo"];
@@ -299,6 +314,8 @@ export function createApi(config: ApiConfig) {
     sites: () => get<{ sites: Site[] }>("/api/sites"),
     addSite: (domain: string) => request<{ site: Site }>("POST", "/api/sites", { body: { domain } }),
     deleteSite: (id: number) => request<{ ok: true }>("DELETE", `/api/sites/${id}`),
+    setKeepUserIds: (id: number, enabled: boolean) =>
+      request<{ enabled: boolean }>("PUT", `/api/sites/${id}/keep-user-ids`, { body: { enabled } }),
 
     // --- people (owner)
     users: () => get<{ users: PublicUser[] }>("/api/users"),
@@ -316,6 +333,7 @@ export function createApi(config: ApiConfig) {
 
     // --- app analytics
     activeUsers: (s: Scope) => get<ActiveUsers>("/api/active-users", scopeQuery(s)),
+    people: (site: number, days = 30) => get<People>("/api/people", { site, days }),
     retention: (site: number, cohort: "day" | "week" = "week", periods = 8) => get<Retention>("/api/retention", { site, cohort, periods }),
     events: (s: Scope) => get<{ events: EventRow[] }>("/api/events", scopeQuery(s)),
     eventKeys: (s: Scope, event: string) => get<{ keys: { key: string; count: number }[] }>("/api/event-properties", { ...scopeQuery(s), event }),

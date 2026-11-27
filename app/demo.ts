@@ -326,7 +326,12 @@ export function createDemoServer(opts: { now?: () => number } = {}): Transport {
   const now = opts.now ?? (() => Date.now());
   const t0 = Math.floor(now() / 1000);
   const state: State = {
-    sites: Object.keys(PROFILES).map((domain, i) => ({ id: i + 1, domain, created_at: t0 - (400 - i * 40) * 86400 })),
+    sites: Object.keys(PROFILES).map((domain, i) => ({
+      id: i + 1,
+      domain,
+      created_at: t0 - (400 - i * 40) * 86400,
+      keep_user_ids: PROFILES[domain]!.app ? 1 : 0,
+    })),
     users: [
       { id: 1, email: DEMO_EMAIL, role: "owner", created_at: t0 - 400 * 86400, siteIds: [] },
       { id: 2, email: "mia@studio.example", role: "viewer", created_at: t0 - 90 * 86400, siteIds: [1, 2] },
@@ -577,6 +582,26 @@ export function createDemoServer(opts: { now?: () => number } = {}): Transport {
     });
   }
 
+  /** The People list: made-up addresses for an app that keeps user ids, seeded like the rest. */
+  function people(q: URLSearchParams) {
+    const found = siteOf(q);
+    if ("status" in found) return found;
+    const { site } = found;
+    const days = Number(q.get("days") ?? 30);
+    if (!Number.isInteger(days) || days < 1 || days > 365) return fail(400, "days must be 1 to 365");
+    if (site.keep_user_ids !== 1) return ok({ enabled: false, days, people: [], total: 0 });
+    const names = ["ada", "grace", "linus", "margaret", "ken", "barbara", "dennis", "frances", "alan", "radia", "edsger", "katherine"];
+    const hosts = ["studio.example", "mail.example", "lab.example"];
+    const t = Math.floor(now() / 1000);
+    const list = names.map((name, i) => {
+      const last = t - Math.floor(noise(`${site.domain}:pl:${name}`) ** 2 * days * 86400);
+      const first = last - Math.floor((10 + noise(`${site.domain}:pf:${name}`) * 300) * 86400);
+      return { user_id: `${name}@${hosts[i % hosts.length]}`, first_seen: first, last_seen: last };
+    });
+    list.sort((a, b) => b.last_seen - a.last_seen);
+    return ok({ enabled: true, days, people: list, total: list.length });
+  }
+
   // ----------------------------------------------------------------------------------- routing
 
   const withSites = (u: PublicUser): PublicUser => ({ ...u, siteIds: u.role === "owner" ? state.sites.map((s) => s.id) : u.siteIds });
@@ -638,6 +663,8 @@ export function createDemoServer(opts: { now?: () => number } = {}): Transport {
         return activeUsers(q);
       case "GET /api/retention":
         return retention(q);
+      case "GET /api/people":
+        return people(q);
       case "GET /api/events":
         return events(q);
       case "GET /api/event-properties":
@@ -648,6 +675,14 @@ export function createDemoServer(opts: { now?: () => number } = {}): Transport {
         return ok({ grants: state.grants });
     }
 
+    const keep = /^\/api\/sites\/(\d+)\/keep-user-ids$/.exec(path);
+    if (keep && req.method === "PUT") {
+      const target = state.sites.find((s) => s.id === Number(keep[1]));
+      if (!target) return fail(404, "no such site");
+      if (typeof body.enabled !== "boolean") return fail(400, "enabled must be true or false");
+      target.keep_user_ids = body.enabled ? 1 : 0;
+      return ok({ enabled: body.enabled });
+    }
     const site = /^\/api\/sites\/(\d+)$/.exec(path);
     if (site && req.method === "DELETE") {
       state.sites = state.sites.filter((s) => s.id !== Number(site[1]));

@@ -1,7 +1,7 @@
 /**
  * The Users screen against a fake instance: the tiles and chart of a site that sends user ids, the
- * retention grid and its day / week switch, that filters do not reload it, and the setup snippet of a
- * site that has never sent one.
+ * retention grid and its day / week switch, that filters do not reload it, the People list and its
+ * empty state, and the setup snippet of a site that has never sent one.
  */
 import { describe, expect, open, test, type StubRequest, type StubResponse } from "nsh/test";
 import { retentionGrid } from "./screens/users/retention";
@@ -42,6 +42,7 @@ function server(over: Routes = {}): Routes {
     [`GET ${S}/api/realtime*`]: { body: { online: 0, minutes: [], recent: [] } },
     [`GET ${S}/api/active-users*`]: { body: activeUsers },
     [`GET ${S}/api/retention*`]: (r) => ({ body: retention(r.url.includes("cohort=day") ? "day" : "week") }),
+    [`GET ${S}/api/people*`]: { body: { enabled: false, days: 7, people: [], total: 0 } },
     ...over,
   };
 }
@@ -119,6 +120,41 @@ describe("users screen", () => {
     await app.press("id:nav-users");
     await app.waitUntil(() => hasText(app.texts(), "database is busy"));
     expect(hasText(app.texts(), "Try again")).toBe(true);
+    app.dispose();
+  });
+});
+
+describe("people", () => {
+  const now = Math.floor(Date.now() / 1000);
+  const people = {
+    enabled: true,
+    days: 7,
+    total: 3,
+    people: [
+      { user_id: "ada@example.com", first_seen: now - 40 * 86400, last_seen: now - 2 * 3600 },
+      { user_id: "grace@example.com", first_seen: now - 3 * 86400, last_seen: now - 2 * 86400 },
+    ],
+  };
+
+  test("lists who uses the app, with the window of the range", async () => {
+    const app = await open("./App.tsx", { ...desktop, storage: signedIn(), network: server({ [`GET ${S}/api/people*`]: { body: people } }) });
+    await app.press("id:nav-users");
+    await app.waitFor("id:people-table");
+    expect(hasText(app.texts(), "ada@example.com")).toBe(true);
+    expect(hasText(app.texts(), "grace@example.com")).toBe(true);
+    expect(hasText(app.texts(), "2h ago")).toBe(true);
+    expect(hasText(app.texts(), "newest 2 shown")).toBe(true);
+    expect(calls(app, "/api/people").at(-1)!.url).toContain("days=7");
+    app.dispose();
+  });
+
+  test("a site that does not keep user ids says how to turn it on", async () => {
+    const app = await open("./App.tsx", { ...desktop, storage: signedIn(), network: server() });
+    await app.press("id:nav-users");
+    await app.waitFor("id:people-off");
+    expect(hasText(app.texts(), "Turn on Keep user ids")).toBe(true);
+    await app.press("text:Open Settings");
+    await app.waitFor("id:screen-settings");
     app.dispose();
   });
 });

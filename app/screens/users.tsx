@@ -1,6 +1,7 @@
 /**
  * Users: how many installs used the app over the range (daily active, new, weekly, monthly), how
- * sticky it is (average DAU / MAU), and how many come back (retention cohorts). It needs the site to
+ * sticky it is (average DAU / MAU), how many come back (retention cohorts), and, for a site that
+ * keeps user ids, who they are (People). It needs the site to
  * send a `user_id`; until it does (`tracked: false`) the screen explains how, with a snippet.
  *
  * `/api/active-users` takes the site and the range only: filters do not narrow it (the per-day
@@ -14,6 +15,7 @@ import { api, currentFilters, currentRange, currentSiteId, rangeLabels } from ".
 import { ChartLegend, EmptyState, MetricTile, Panel, Skeleton, Sparkline, StatusPill, TimeSeries, Txt } from "../ui";
 import { ScreenFrame } from "./frame";
 import { bucketLabel, mean } from "./users/labels";
+import { PeoplePanel } from "./users/people";
 import { RetentionPanel } from "./users/retention";
 import { UserIdSetup } from "./users/setup";
 
@@ -72,6 +74,7 @@ export function UsersScreen() {
         <UserTiles load={load} testID="users" />
         <DailyUsersPanel load={load} testID="users-chart" />
         <RetentionPanel />
+        <PeoplePanel />
       </If>
     </ScreenFrame>
   );

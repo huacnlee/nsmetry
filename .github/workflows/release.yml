@@ -21,6 +21,8 @@
 #   NSH_PACKAGE_CERT              the release also carries nsmetry-<version>.nshpkg and a signed update manifest
 #                                 (latest.json + latest.json.sig) for NSH's updater. Installed apps follow it once
 #                                 nsh.json has an `updater` block naming its URL and public key.
+#   CARGO_REGISTRY_TOKEN          publishes the nsmetry crate (sdk/nsh) when its version is new; see `crate` below.
+#   NPM_TOKEN                     publishes the nsmetry npm package (sdk/js) when its version is new; see `npm` below.
 name: Release
 
 on:
@@ -220,4 +222,40 @@ jobs:
             echo "::warning::nsmetry $version is not on crates.io, but CARGO_REGISTRY_TOKEN is not set: skipped"
           else
             cargo publish --no-verify
+          fi
+
+  # The JavaScript SDK (sdk/js) on npm, so `npm install nsmetry` gets it. Like the crate, it publishes only when
+  # sdk/js/package.json names a version npm does not have yet (bump it there, and SDK_VERSION in src/core.ts, to
+  # publish) and the NPM_TOKEN secret is set (a granular token allowed to publish nsmetry); otherwise it says why it
+  # skipped. The package carries a provenance statement linking it to this workflow run.
+  npm:
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: sdk/js
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - name: Publish the nsmetry package when its version is new
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if npm view "nsmetry@$version" version > /dev/null 2>&1; then
+            echo "::notice::nsmetry $version is already on npm: skipped"
+          elif [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "::warning::nsmetry $version is not on npm, but NPM_TOKEN is not set: skipped"
+          else
+            npm install --no-audit --no-fund
+            npm run build
+            npm run check:pack
+            # prepublishOnly type-checks, tests and builds again before the upload.
+            npm publish --provenance --access public
           fi

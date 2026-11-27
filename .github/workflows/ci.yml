@@ -54,6 +54,9 @@ jobs:
         working-directory: sdk/js
       - run: npm test
         working-directory: sdk/js
+      # What `npm install nsmetry` gets: the packed tarball installs, imports and type-checks in an empty project.
+      - run: npm run build && npm run check:pack
+        working-directory: sdk/js
 
   # The apps (app/) and the NSH SDK (sdk/nsh) with its example app: type-checked, built and tested by `nsh`
   # on the pinned NSH release (setup-nsh `version`), the same one release.yml packages with, so an NSH change that breaks

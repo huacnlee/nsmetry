@@ -165,6 +165,10 @@ When you add an event through `track()`:
    when `sdk/nsh/Cargo.toml` has a version crates.io does not have yet. Leave
    that version alone to skip it (the usual case); bump it, with
    `sdk/nsh/nsh.json`, to publish the SDK with the release.
+5. The `npm` job publishes the `nsmetry` package (`sdk/js`) to npm the same
+   way: only when `sdk/js/package.json` has a version npm does not have yet.
+   Bump it together with `SDK_VERSION` in `sdk/js/src/core.ts` (CI checks they
+   agree) to publish the SDK with the release.
 
 Secrets (repository settings › Secrets and variables › Actions):
 
@@ -174,6 +178,8 @@ Secrets (repository settings › Secrets and variables › Actions):
   Android updates.
 - `CARGO_REGISTRY_TOKEN` (optional): a crates.io token for the `crate` job.
   Without it a new SDK version is skipped with a warning.
+- `NPM_TOKEN` (optional): an npm granular access token that may publish
+  `nsmetry`, for the `npm` job. Without it the job skips.
 - `NSH_PACKAGE_KEY`, `NSH_PACKAGE_CERT` (optional): sign an `.nshpkg` and an
   update manifest for NSH's in-app updater.
 

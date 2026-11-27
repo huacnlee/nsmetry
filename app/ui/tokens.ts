@@ -140,8 +140,10 @@ export const interactiveTransition: ViewStyle = {
  * are functions: `token()` is reactive, so a style binding that calls them follows the appearance.
  */
 export const elevation = {
-  /** Menus, popovers, dialogs: `0 6px 20px` plus a near shadow. */
+  /** Dialogs and toasts: `0 6px 20px` plus a near shadow. */
   float: (): ViewStyle => ({ boxShadow: `0 6px 20px ${token("shadow")}, 0 1px 3px ${token("shadow-near")}` }),
+  /** Menus, selects and popovers: lighter than `float`, as they already carry a border. */
+  popup: (): ViewStyle => ({ boxShadow: `0 4px 12px ${token("shadow-near")}` }),
   /** The selected segment of a segmented control. */
   raised: (): ViewStyle => ({ boxShadow: `0 1px 2px ${token("shadow-near")}` }),
 };

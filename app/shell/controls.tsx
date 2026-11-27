@@ -2,7 +2,7 @@
  * The shell's controls, shared by the wide (sidebar) and narrow (tab bar) layouts: the site
  * switcher, the range picker, the compare toggle, the filter chips and the account menu.
  */
-import { appInfo, signal, untracked, View } from "nsh";
+import { appInfo, openUrl, signal, untracked, View } from "nsh";
 import { ApiError, type Dim, RANGES, type RangeId } from "../api";
 import { formatCount } from "../format";
 import {
@@ -232,7 +232,15 @@ export function FilterBar() {
   );
 }
 
-/** Who is signed in, their role, the appearance, and sign out. */
+/** NsMetry's own pages: the website (the repository's homepage, the live demo) and the source. */
+export const projectLinks = [
+  { id: "website", label: "Website", icon: "website", url: "https://huacnlee.github.io/nsmetry/" },
+  { id: "github", label: "GitHub", icon: "source", url: "https://github.com/huacnlee/nsmetry" },
+] as const;
+
+export const openProjectLink = (url: string) => void openUrl(url).catch(() => undefined);
+
+/** Who is signed in, their role, the appearance, NsMetry's website and GitHub, and sign out. */
 export function AccountMenu() {
   const user = () => currentUser();
   const initial = () => (user()?.email[0] ?? "?").toUpperCase();
@@ -250,6 +258,10 @@ export function AccountMenu() {
       <MenuRow label="System" icon="system" checked={currentAppearance() === "system"} onSelect={() => setAppearance("system")} />
       <MenuRow label="Light" icon="sun" checked={currentAppearance() === "light"} onSelect={() => setAppearance("light")} />
       <MenuRow label="Dark" icon="moon" checked={currentAppearance() === "dark"} onSelect={() => setAppearance("dark")} />
+      <MenuSep />
+      <Each of={projectLinks}>
+        {(l) => <MenuRow testID={`open-${l().id}`} label={l().label} icon={l().icon} onSelect={() => openProjectLink(l().url)} />}
+      </Each>
       <MenuSep />
       <If when={appInfo().development}>
         <MenuRow label="UI gallery" icon="overview" onSelect={() => go("gallery")} />

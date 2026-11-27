@@ -49,6 +49,8 @@ export const glyphs = {
   // A detail page's header (open elsewhere, more) and pagers.
   expand: L.Maximize2,
   external: L.ExternalLink,
+  website: L.Globe,
+  source: L.FolderGit2,
   more: L.Ellipsis,
   back: L.ArrowLeft,
   forward: L.ArrowRight,

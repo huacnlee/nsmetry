@@ -80,7 +80,7 @@ export function AppOverview() {
           <LivePanel live={live} testID="live" />
         </Cell>
         <Cell>
-          <BreakdownList testID="overview-pages" title="Screens" dims={["path"]} labels={{ path: "Screens" }} source={lists} formatName={displayName} />
+          <BreakdownList testID="overview-pages" title="Screens" dims={["path"]} labels={{ path: "Screen" }} source={lists} formatName={displayName} />
         </Cell>
         <Cell>
           <BreakdownList testID="overview-events" title="Events" dims={["event"]} source={lists} formatName={displayName} />

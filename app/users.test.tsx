@@ -162,6 +162,8 @@ describe("an app's overview", () => {
     expect(app.shows("id:overview-metrics")).toBe(false);
     expect(app.shows("id:overview-sources")).toBe(false);
     expect(app.shows("id:nav-sources")).toBe(false);
+    expect(app.shows("id:add-filter-referrer")).toBe(false);
+    expect(app.shows("id:add-filter-os")).toBe(true);
     const dims = calls(app, "/api/breakdown").at(-1)!.url;
     expect(dims).toContain("app_version");
     expect(dims).not.toContain("referrer");

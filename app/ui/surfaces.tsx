@@ -32,7 +32,7 @@ export function Panel(props: {
   return (
     <View testID={props.testID} class={`rounded-(--radius-panel) border border-border bg-card ${props.class ?? ""}`}>
       <View class="flex-row items-center gap-2 px-4 pt-3 pb-2">
-        <View class="flex-1 gap-0.5">
+        <View class="min-w-0 flex-1 gap-0.5">
           <Heading size="lead">{props.title}</Heading>
           <If when={props.note}><Txt size="caption" tone="muted">{props.note}</Txt></If>
         </View>

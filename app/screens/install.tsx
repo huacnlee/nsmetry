@@ -65,7 +65,7 @@ function ScriptUrl(props: { server: string }) {
       error={error()}
     >
       <View class="flex-row items-center gap-2">
-        <View class="flex-1">
+        <View class="min-w-0 flex-1">
           <TextInput
             testID="tracker-url"
             value={draft()}

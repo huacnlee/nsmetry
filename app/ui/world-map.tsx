@@ -217,7 +217,7 @@ export function WorldMap(props: {
         />
       </View>
       <View class="flex-row items-center gap-3" style={{ minHeight: size.tag }}>
-        <View class="flex-1">
+        <View class="min-w-0 flex-1">
           <Txt size="caption" tone={hovered() || props.selected ? "soft" : "faint"} truncate numeric>{caption()}</Txt>
         </View>
         <MapLegend />

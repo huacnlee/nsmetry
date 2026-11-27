@@ -88,7 +88,7 @@ export function GroupSection(props: {
           accessibilityState={{ expanded: props.open }}
           onPress={() => props.onToggle(!props.open)}
           focusVisibleStyle={focusRing()}
-          class="flex-1 flex-row items-center gap-2 rounded-(--radius) px-2 hover:bg-hover active:bg-pressed motion-reduce:transition-none"
+          class="min-w-0 flex-1 flex-row items-center gap-2 rounded-(--radius) px-2 hover:bg-hover active:bg-pressed motion-reduce:transition-none"
           style={[interactiveTransition, { minHeight: size.listRow }]}
         >
           <View

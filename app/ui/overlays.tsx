@@ -196,7 +196,7 @@ export function ToastHost() {
               style={[elevation.float(), { transitionProperty: "opacity, transform", transitionDuration: t().status === "ending" ? motion.duration.instant : motion.duration.fast, transitionTimingFunction: settleTiming }]}
             >
               <Glyph name={t().tone === "error" ? "error" : t().tone === "ok" ? "ok" : "info"} size={size.icon} tone={t().tone === "error" ? "bad" : t().tone === "ok" ? "ok" : "muted"} />
-              <View class="flex-1 gap-0.5">
+              <View class="min-w-0 flex-1 gap-0.5">
                 <Txt weight="medium">{t().title}</Txt>
                 <If when={t().body}><Txt size="caption" tone="muted">{t().body}</Txt></If>
               </View>

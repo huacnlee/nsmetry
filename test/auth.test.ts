@@ -64,8 +64,8 @@ async function requestCode(email: string): Promise<string> {
   const log = vi.spyOn(console, 'log');
   const response = await post('/api/auth/start', { email });
   expect(response.status).toBe(200);
-  const body = (await response.json()) as { ok: boolean; delivery: string; codeDigits: number; message?: string };
-  expect(body).toMatchObject({ ok: true, delivery: 'log', codeDigits: 8 });
+  const body = (await response.json()) as { ok: boolean; delivery: string; message?: string };
+  expect(body).toMatchObject({ ok: true, delivery: 'log' });
   expect(body.message).toMatch(/wrangler tail/);
 
   const line = log.mock.calls.map((args) => String(args[0])).find((l) => l.includes('sign-in-code'));
@@ -73,13 +73,12 @@ async function requestCode(email: string): Promise<string> {
   if (!line) throw new Error('no sign-in code was logged');
   const parsed = JSON.parse(line) as { to: string; code: string };
   expect(parsed.to).toBe(email);
-  expect(parsed.code).toMatch(/^[0-9]{8}$/);
   return parsed.code;
 }
 
 async function signIn(email: string): Promise<{ token: string; user: { id: number; role: string; siteIds: number[] } }> {
   const code = await requestCode(email);
-  const response = await post('/api/auth/verify', { email, code });
+  const response = await post('/api/auth/verify', { email, code: code.toLowerCase() });
   expect(response.status).toBe(200);
   return (await response.json()) as { token: string; user: { id: number; role: string; siteIds: number[] } };
 }
@@ -106,14 +105,14 @@ describe('email code sign-in', () => {
 
   it('accepts the code typed loosely, and only once', async () => {
     const code = await requestCode(ADMIN);
-    const typed = ` ${code.slice(0, 4)}-${code.slice(4)} `;
+    const typed = `${code.slice(0, 4).toLowerCase()}-${code.slice(4)}`;
     expect((await post('/api/auth/verify', { email: ADMIN, code: typed })).status).toBe(200);
     expect((await post('/api/auth/verify', { email: ADMIN, code })).status).toBe(401);
   });
 
   it('rejects a wrong code, and stops after five tries on one code', async () => {
     const code = await requestCode(ADMIN);
-    const wrong = code === '00000000' ? '11111111' : '00000000';
+    const wrong = code === 'AAAAAAAA' ? 'BBBBBBBB' : 'AAAAAAAA';
     for (let i = 0; i < 5; i++) {
       const response = await post('/api/auth/verify', { email: ADMIN, code: wrong });
       expect(response.status).toBe(401);
@@ -178,7 +177,7 @@ describe('email code sign-in', () => {
       .run();
 
     const code = await requestCode(ADMIN);
-    const wrong = code === '00000000' ? '11111111' : '00000000';
+    const wrong = code === 'AAAAAAAA' ? 'BBBBBBBB' : 'AAAAAAAA';
     expect((await post('/api/auth/verify', { email: ADMIN, code: wrong }, undefined, attacker)).status).toBe(401);
 
     // The attacker is locked out, even with the right code, and gets no new code…
@@ -190,7 +189,7 @@ describe('email code sign-in', () => {
 
   it('spends each of a code\'s five tries once, however many guesses race', async () => {
     const code = await requestCode(ADMIN);
-    const wrong = code === '00000000' ? '11111111' : '00000000';
+    const wrong = code === 'AAAAAAAA' ? 'BBBBBBBB' : 'AAAAAAAA';
     const now = Math.floor(Date.now() / 1000);
     const results = await Promise.all(
       Array.from({ length: 12 }, () => checkCode(env, ADMIN, wrong, '203.0.113.9', now)),
@@ -210,7 +209,7 @@ describe('email code sign-in', () => {
     const start = await startSignIn(unset, ADMIN);
     expect(start.status).toBe(503);
     expect((start.body as { error: string }).error).toMatch(/ADMIN_EMAIL/);
-    const check = await checkCode(unset, ADMIN, '12345678');
+    const check = await checkCode(unset, ADMIN, 'ABCDEFGH');
     expect(check).toMatchObject({ status: 503 });
   });
 

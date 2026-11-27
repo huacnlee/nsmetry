@@ -54,8 +54,6 @@ export interface StartResponse {
   ok: true;
   /** How the code was delivered: `"log"` means no mail is configured and the code is in the Worker logs (`message` says where). */
   delivery: "smtp" | "email" | "log";
-  /** How many digits the code has. Servers before 0.1.2 send letters and digits and leave this out. */
-  codeDigits?: number;
   message?: string;
 }
 export interface VerifyResponse {

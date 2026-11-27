@@ -5,6 +5,7 @@
 import { appInfo, openUrl, Scroll, signal, untracked, View } from "nsh";
 import { ApiError, type Dim, RANGES, type RangeId } from "../api";
 import { formatCount } from "../format";
+import { isAppSite } from "./nav";
 import {
   addFilter,
   addSite,
@@ -14,6 +15,7 @@ import {
   currentAppearance,
   currentFilters,
   currentRange,
+  currentSite,
   currentSiteId,
   currentUser,
   dimLabels,
@@ -177,6 +179,9 @@ export function CompareToggle(props: { icon?: boolean }) {
  */
 export const quickFilterDims: readonly Dim[] = ["path", "referrer", "country", "device", "app_version"];
 
+/** An app's chips: no referrer (an app has none), its OS instead. */
+export const appQuickFilterDims: readonly Dim[] = ["path", "os", "device", "app_version", "country"];
+
 /**
  * One "+ Country" chip: opening it loads that dimension's top values for the current scope (one
  * `/api/breakdown` call), and picking one adds the filter every screen then follows.
@@ -244,7 +249,7 @@ function FilterChips(props: { wrap: boolean }) {
           </Each>
         </View>
       </If>
-      <Each of={filtersAllowed() ? quickFilterDims.filter((d) => filterFor(d) === null) : []}>
+      <Each of={filtersAllowed() ? (isAppSite(currentSite()?.domain) ? appQuickFilterDims : quickFilterDims).filter((d) => filterFor(d) === null) : []}>
         {(d) => <AddFilter dim={d()} />}
       </Each>
       <If when={currentFilters().length > 1}>

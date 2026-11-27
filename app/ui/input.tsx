@@ -2,9 +2,9 @@
  * Text fields (allsum §3: 28pt, 6pt radius, a 1px input border that takes the ring color on focus).
  * `Field` wraps one with its label above and a hint or error below, which screen readers read with it.
  */
-import type { InputStyle } from "nsh";
+import type { InputStyle, TextStyle } from "nsh";
 import { View } from "nsh";
-import { Input } from "nsh/base";
+import { Input, OtpInput, type OtpInputRef } from "nsh/base";
 import { Txt } from "./text";
 import { focusRing, interactiveTransition, pad, size, type } from "./tokens";
 
@@ -43,6 +43,46 @@ export function TextInput(props: {
       class={`rounded-(--radius) border bg-background text-foreground placeholder:text-faint focus:border-ring motion-reduce:transition-none ${props.invalid ? "border-bad" : "border-input"} ${props.disabled ? "bg-hover text-muted-foreground" : ""}`}
       focusStyle={focusRing()}
       style={[interactiveTransition as InputStyle, type.ui, { height: size.control, paddingHorizontal: pad.field }]}
+    />
+  );
+}
+
+/**
+ * A one-time code of `length` digits (NSH's `OtpInput`): one cell per digit in two groups, the text
+ * field's border and focus color on each cell, the muted fill on the filled ones. Typing, paste and
+ * the system's code autofill are the platform field's; `onComplete` fires when the last cell fills.
+ * The cells share the row (`flex-1`), so eight of them fit a phone-wide card.
+ */
+export function CodeInput(props: {
+  length: number;
+  value: string;
+  onChange: (value: string) => void;
+  onComplete?: (value: string) => void;
+  invalid?: boolean;
+  disabled?: boolean;
+  /** Take the keyboard focus (and a phone's number pad) once shown. */
+  autoFocus?: boolean;
+  accessibilityLabel?: string;
+  testID?: string;
+}) {
+  return (
+    <OtpInput
+      ref={(r: OtpInputRef) => {
+        if (props.autoFocus) setTimeout(() => r.focus(), 0);
+      }}
+      testID={props.testID}
+      length={props.length}
+      groups={2}
+      value={props.value}
+      disabled={props.disabled}
+      accessibilityLabel={props.accessibilityLabel ?? `Sign-in code, ${props.length} digits`}
+      onChange={(e) => props.onChange(e.value)}
+      onComplete={(e) => props.onComplete?.(e.value)}
+      class="flex-row gap-3"
+      groupClass="flex-1 flex-row gap-1.5"
+      cellClass={`flex-1 items-center justify-center rounded-(--radius) border bg-background text-foreground font-medium focus:border-ring data-filled:bg-muted motion-reduce:transition-none disabled:bg-hover disabled:text-muted-foreground ${props.invalid ? "border-bad" : "border-input"}`}
+      cellStyle={[interactiveTransition as TextStyle, type.title, { height: size.control + 12 }]}
+      caretClass="w-0.5 h-5 bg-foreground"
     />
   );
 }

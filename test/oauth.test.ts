@@ -303,7 +303,7 @@ describe('authorize', () => {
     });
     const first = await (await SELF.fetch(`${BASE}/oauth/authorize?${query}`)).text();
     const { html } = await emailStep(hiddenFields(first), ADMIN);
-    const response = await postForm({ ...hiddenFields(html), email: ADMIN, code: 'AAAAAAAA' });
+    const response = await postForm({ ...hiddenFields(html), email: ADMIN, code: '00000000' });
     expect(response.status).toBe(401);
     const body = await response.text();
     expect(body).toContain('not right');

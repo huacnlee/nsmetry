@@ -1,5 +1,5 @@
 /**
- * Overview: the site at a glance.
+ * Overview: the site at a glance. This is a website's; an app's is ./app-overview.tsx.
  *
  *  - A card of five metric tiles (visitors, views, views per visit, bounce rate, visit duration),
  *    each with its value, its change against the previous period and a sparkline. The selected tile
@@ -22,6 +22,8 @@ import { change } from "../format";
 import { comparing, currentFilters, currentRange, currentSite, go, rangeLabels } from "../store";
 import { Button, Card, ChartLegend, Divider, EmptyState, Heading, MetricTile, Skeleton, Sparkline, TimeSeries } from "../ui";
 import { WIDE } from "../ui/tokens";
+import { isAppSite } from "../shell/nav";
+import { AppOverview } from "./app-overview";
 import { ScreenFrame } from "./frame";
 import { breakdownResource, errorText, summaryResource } from "./insights/data";
 import { Cell, Grid } from "./insights/grid";
@@ -34,7 +36,16 @@ const OVERVIEW_DIMS: readonly Dim[] = [
   "path", "entry", "exit", "referrer", "utm_source", "utm_medium", "utm_campaign", "event", "country", "browser", "os", "device",
 ];
 
+/** An app's overview leads with its users (./app-overview.tsx); a website's with visitors. */
 export function OverviewScreen() {
+  return (
+    <If when={isAppSite(currentSite()?.domain)} else={<WebOverview />}>
+      <AppOverview />
+    </If>
+  );
+}
+
+function WebOverview() {
   const metric = signal<Metric>("visitors");
   const summary = summaryResource();
   const lists = breakdownResource(OVERVIEW_DIMS, 8);

@@ -117,8 +117,13 @@ development builds. `app/gallery.test.tsx` checks it and, on a real target
 - Narrower: compact top bar (site, account; the brand only in a desktop window), below the status
   bar and clear of the notch on phones, the range across the width (`Segmented` `layout="stretch"`)
   with Compare as an icon beside it, the filter chips in one row that scrolls sideways, pull to
-  refresh on touch screens, and a bottom tab bar (Overview, Users, Pages, Sources as tabs; "More" a button
-  beside the tab list, so arrow keys never open its sheet) with the rest in a bottom sheet.
+  refresh on touch screens, and a bottom tab bar (Overview, Users, Pages, Sources as tabs; for an
+  app, Overview, Users, Events, Pages; "More" a button beside the tab list, so arrow keys never open
+  its sheet) with the rest in a bottom sheet.
+- An app (a site named without a dot, `isAppSite`) is read by its users: its Overview leads with
+  active and new users and the daily chart, then screens, events, platforms, app versions and
+  countries. Referrers, UTM tags, entry and exit pages, browsers, bounce rate and visit duration are
+  left out, and Sources is not in the navigation.
 - The sidebar's brand and sections (`NavItem`) share one left edge.
 - Data details open as pages on a NavStack (`openDetail`), never in a sheet.
 - Desktop windows hide the system title bar; the shell keeps clear of the window controls.

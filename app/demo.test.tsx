@@ -83,7 +83,9 @@ describe("demo in the app", () => {
     await app.waitFor("id:screen-overview");
     expect(app.requests().length).toBe(0);
 
-    for (const screen of ["pages", "sources", "geography", "tech", "events", "users", "team", "agents"]) {
+    // The demo opens on disktree, an app: Sources is a website's section, so it is not in the nav.
+    expect(app.shows("id:nav-sources")).toBe(false);
+    for (const screen of ["pages", "geography", "tech", "events", "users", "team", "agents"]) {
       await app.press(`id:nav-${screen}`);
       await app.waitFor(`id:screen-${screen}`);
     }

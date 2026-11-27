@@ -151,3 +151,32 @@ describe("users screen on a phone", () => {
     app.dispose();
   });
 });
+
+describe("an app's overview", () => {
+  test("leads with active users and leaves out what only a website has", async () => {
+    const app = await open("./App.tsx", { ...desktop, storage: signedIn(), network: server() });
+    await app.waitFor("id:overview-users-tiles");
+    expect(app.shows("id:overview-users-chart")).toBe(true);
+    expect(app.shows("id:overview-platforms")).toBe(true);
+    expect(app.shows("id:overview-versions")).toBe(true);
+    expect(app.shows("id:overview-metrics")).toBe(false);
+    expect(app.shows("id:overview-sources")).toBe(false);
+    expect(app.shows("id:nav-sources")).toBe(false);
+    expect(app.shows("id:add-filter-referrer")).toBe(false);
+    expect(app.shows("id:add-filter-os")).toBe(true);
+    const dims = calls(app, "/api/breakdown").at(-1)!.url;
+    expect(dims).toContain("app_version");
+    expect(dims).not.toContain("referrer");
+    app.dispose();
+  });
+
+  test("an app that has not sent a user id yet points to the install", async () => {
+    const app = await open("./App.tsx", { ...desktop,
+      storage: signedIn(),
+      network: server({ [`GET ${S}/api/active-users*`]: { body: { ...activeUsers, tracked: false, dau: [], new: [], labels: [] } } }),
+    });
+    await app.waitFor("id:overview-no-users");
+    expect(app.shows("id:overview-users-tiles")).toBe(false);
+    app.dispose();
+  });
+});

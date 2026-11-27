@@ -6,6 +6,10 @@
  *   delivery "log"                             → no mail is configured: the code is in the Worker logs
  *   status 0                                   → the server could not be reached
  *
+ * The code goes into one cell per digit (`CodeInput`, NSH's `OtpInput`) and is sent as soon as the
+ * last cell fills. A server older than 0.1.2 sends letters too and says nothing about `codeDigits`, so
+ * its code goes into a plain text field.
+ *
  * Motion: the code step slides in from the right and fades (base, soft settle) as the email step
  * leaves; errors fade in; under reduced motion both swap at once.
  */
@@ -14,7 +18,7 @@ import { ApiError } from "./api";
 import { openProjectLink, projectLinks } from "./shell/controls";
 import { Brand } from "./shell/sidebar";
 import { currentServer, enterDemo, requestCode, serverIsFixed, setServer, signOutReason, verifyCode } from "./store";
-import { Button, Card, Field, Heading, motion, TextInput, Txt } from "./ui";
+import { Button, Card, CodeInput, Field, Heading, motion, TextInput, Txt } from "./ui";
 
 export function explainStartError(e: unknown): string {
   if (!(e instanceof ApiError)) return String(e);
@@ -31,6 +35,8 @@ export function SignIn() {
   const serverText = signal(currentServer());
   const email = signal("");
   const code = signal("");
+  /** The code's length when it is digits only (the server says so); `null` for an older server's code. */
+  const digits = signal<number | null>(null);
   const error = signal<string | null>(null);
   const notice = signal<string | null>(null);
   const busy = signal(false);
@@ -43,6 +49,8 @@ export function SignIn() {
     notice.set(null);
     try {
       const res = await requestCode(email());
+      digits.set(res.codeDigits ?? null);
+      code.set("");
       notice.set(
         res.delivery === "log"
           ? `No mail is configured on this server: the code is in your Worker logs. ${res.message ?? "Read it with `wrangler tail`."}`
@@ -57,13 +65,17 @@ export function SignIn() {
   };
 
   const verify = async () => {
-    if (!code().trim()) return error.set("Enter the code from the email.");
+    if (busy()) return;
+    const n = digits();
+    if (!code().trim() || (n !== null && code().length < n)) return error.set("Enter the code from the email.");
     busy.set(true);
     error.set(null);
     try {
       await verifyCode(email(), code());
     } catch (e) {
       error.set(e instanceof ApiError ? e.message : String(e));
+      // Full cells would take eight Backspaces before a retry: start the code over instead.
+      if (digits() !== null) code.set("");
       busy.set(false);
     }
   };
@@ -109,6 +121,7 @@ export function SignIn() {
           <If when={step() === "code"}>
             <CodeStep
               notice={notice()}
+              digits={digits()}
               code={code()}
               onCode={(v) => code.set(v)}
               error={error()}
@@ -135,6 +148,7 @@ export function SignIn() {
 
 function CodeStep(props: {
   notice: string | null;
+  digits: number | null;
   code: string;
   onCode: (v: string) => void;
   error: string | null;
@@ -153,7 +167,12 @@ function CodeStep(props: {
         </View>
       </If>
       <Field label="Code" error={props.error}>
-        <TextInput testID="code" value={props.code} onChange={props.onCode} onSubmit={props.onVerify} placeholder="ABCD-EFGH" keyboard="default" plain autoComplete="one-time-code" autoFocus invalid={!!props.error} />
+        <If
+          when={props.digits}
+          else={<TextInput testID="code" value={props.code} onChange={props.onCode} onSubmit={props.onVerify} placeholder="ABCD-EFGH" keyboard="default" plain autoComplete="one-time-code" autoFocus invalid={!!props.error} />}
+        >
+          {(n) => <CodeInput testID="code" length={n()} value={props.code} onChange={props.onCode} onComplete={props.onVerify} invalid={!!props.error} autoFocus />}
+        </If>
       </Field>
       <Button testID="verify" label="Sign in" variant="primary" block busy={props.busy} onPress={props.onVerify} />
       <View class="flex-row justify-between">

@@ -62,6 +62,44 @@ describe("sign-in", () => {
     app.dispose();
   });
 
+  test("an 8-digit code goes into cells and signs in as soon as the last one fills", async () => {
+    const digits = server({
+      [`POST ${S}/api/auth/start`]: { body: { ok: true, delivery: "email", codeDigits: 8 } },
+      [`POST ${S}/api/auth/verify`]: (r) =>
+        JSON.parse(r.body ?? "{}").code === "12345678"
+          ? { body: { token: "tok-1", user: owner } }
+          : { status: 401, body: { error: "that code is not right" } },
+    });
+    const app = await open("./App.tsx", { network: digits, storage: { server: S } });
+    await app.type("id:email", "owner@example.com");
+    await app.press("id:send-code");
+    await app.waitFor("id:code");
+    await app.type("id:code", "1234abcd5678");
+    await app.waitFor("id:screen-overview");
+    const verify = app.requests().find((r) => r.url === `${S}/api/auth/verify`);
+    expect(JSON.parse(verify?.body ?? "{}").code).toBe("12345678");
+    app.dispose();
+  });
+
+  test("a wrong 8-digit code says so and empties the cells for another try", async () => {
+    const app = await open("./App.tsx", {
+      storage: { server: S },
+      network: server({ [`POST ${S}/api/auth/start`]: { body: { ok: true, delivery: "email", codeDigits: 8 } } }),
+    });
+    await app.type("id:email", "owner@example.com");
+    await app.press("id:send-code");
+    await app.waitFor("id:code");
+    await app.type("id:code", "00000000");
+    await app.waitUntil(() => hasText(app.texts(), "that code is not right"));
+    expect(app.shows("id:screen-overview")).toBe(false);
+    // The cells were emptied: a fresh code fills them again and goes out as a second try.
+    await app.type("id:code", "11111111");
+    await app.waitUntil(() => app.requests().filter((r) => r.url === `${S}/api/auth/verify`).length === 2);
+    const tries = app.requests().filter((r) => r.url === `${S}/api/auth/verify`).map((r) => JSON.parse(r.body ?? "{}").code);
+    expect(tries).toEqual(["00000000", "11111111"]);
+    app.dispose();
+  });
+
   test("a wrong code says so and stays on the code step", async () => {
     const app = await open("./App.tsx", { network: server(), storage: { server: S } });
     await app.type("id:email", "owner@example.com");

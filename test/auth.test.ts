@@ -64,10 +64,10 @@ async function requestCode(email: string): Promise<string> {
   const log = vi.spyOn(console, 'log');
   const response = await post('/api/auth/start', { email });
   expect(response.status).toBe(200);
-  const body = (await response.json()) as { ok: boolean; delivery: string; message?: string };
-  expect(body).toMatchObject({ ok: true, delivery: 'log' });
-  // Apps 0.1.2 and 0.1.3 show digit-only cells when this is present: without it they use their text field.
-  expect(body).not.toHaveProperty('codeDigits');
+  const body = (await response.json()) as { ok: boolean; delivery: string; codeLength: number; codeDigits?: number; message?: string };
+  expect(body).toMatchObject({ ok: true, delivery: 'log', codeLength: 8 });
+  // Apps 0.1.2–0.1.3 show digit-only cells when they see `codeDigits`; letters would not fit in them.
+  expect(body.codeDigits).toBeUndefined();
   expect(body.message).toMatch(/wrangler tail/);
 
   const line = log.mock.calls.map((args) => String(args[0])).find((l) => l.includes('sign-in-code'));

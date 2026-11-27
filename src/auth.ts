@@ -247,6 +247,11 @@ async function maySignIn(env: Env, email: string): Promise<boolean> {
 export interface StartOk {
   ok: true;
   delivery: Delivery;
+  /**
+   * How many characters the code has, so the app shows that many cells. The
+   * characters are letters and digits (`CODE_ALPHABET`), any case.
+   */
+  codeLength: number;
   /** Set when the code went to the logs, saying where to read it. */
   message?: string;
 }
@@ -319,13 +324,14 @@ export async function startSignIn(
         body: {
           ok: true,
           delivery,
+          codeLength: CODE_LENGTH,
           message:
             'Email is not set up on this instance, so the code was written to the Worker logs. ' +
             'Read it with `wrangler tail`, or under Workers → nsmetry → Logs in the Cloudflare dashboard.',
         },
       };
     }
-    return { status: 200, body: { ok: true, delivery } };
+    return { status: 200, body: { ok: true, delivery, codeLength: CODE_LENGTH } };
   } catch (error) {
     console.error(JSON.stringify({ level: 'error', event: 'sign-in-mail', message: String(error) }));
     // The code never arrived, so it must not stay redeemable.

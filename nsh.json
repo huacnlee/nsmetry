@@ -1,8 +1,20 @@
 {
   "name": "NsMetry",
   "id": "dev.nsmetry.app",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "build": 1,
+  "icon": {
+    "ios": "app/icon/icon-ios.png",
+    "macos": "app/icon/icon-macos.png",
+    "windows": "app/icon/icon.png",
+    "linux": "app/icon/icon.png",
+    "web": "app/icon/icon.png",
+    "android": {
+      "foreground": "app/icon/icon-android-foreground.png",
+      "background": "#1A1922",
+      "monochrome": "app/icon/icon-android-monochrome.png"
+    }
+  },
   "entry": "app/App.tsx",
   "appearance": "system",
   "theme": "app/theme.json",

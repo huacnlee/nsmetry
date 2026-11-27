@@ -202,7 +202,7 @@ describe('tools', () => {
     expect(names).toEqual(
       expect.arrayContaining([
         'list_sites', 'get_summary', 'get_breakdown', 'get_timeseries', 'get_realtime',
-        'get_active_users', 'get_retention', 'get_events', 'get_event_properties', 'get_event_series',
+        'get_active_users', 'get_retention', 'get_people', 'get_events', 'get_event_properties', 'get_event_series',
       ]),
     );
     for (const tool of body.result.tools) {

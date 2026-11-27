@@ -26,6 +26,7 @@ import { adminEmail } from './auth';
 import { BREAKDOWN_DIMS } from './dimensions';
 import { resolveAccessToken, resourceMetadataUrl, originOf } from './oauth';
 import { loadActiveUsers, loadEventProperties, loadEvents, loadRetention } from './app-analytics';
+import { MAX_PEOPLE, loadPeople } from './people';
 import {
   METRICS,
   RANGE_IDS,
@@ -323,6 +324,34 @@ const TOOLS: Tool[] = [
       if (cohort !== 'day' && cohort !== 'week') throw new ReportError(400, 'cohort must be day or week');
       const periods = typeof args.periods === 'number' ? Math.trunc(args.periods) : 8;
       return loadRetention(env.DB, site.id, cohort, periods, new Date());
+    },
+  },
+  {
+    name: 'get_people',
+    title: 'People',
+    description:
+      "For an app whose owner turned on keeping user ids: the people (the raw user_id the app sends, such as an " +
+      'email) seen in the last `days` days, newest first, with first_seen and last_seen as Unix seconds (last_seen ' +
+      'is accurate to an hour), and the total. enabled=false means the site does not keep user ids, so the list ' +
+      'is empty.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        site: SITE_PROPERTY,
+        days: { type: 'integer', minimum: 1, maximum: 365, description: 'Window in days. Default 30.' },
+        limit: { type: 'integer', minimum: 1, maximum: MAX_PEOPLE, description: `Most rows to list. Default ${MAX_PEOPLE}.` },
+      },
+      required: ['site'],
+      additionalProperties: false,
+    },
+    run: async (env, user, args) => {
+      const site = await findSite(env.DB, user, siteRef(args.site), false);
+      const days = args.days === undefined ? 30 : args.days;
+      if (typeof days !== 'number' || !Number.isInteger(days) || days < 1 || days > 365) {
+        throw new ReportError(400, 'days must be 1 to 365');
+      }
+      const limit = typeof args.limit === 'number' ? Math.trunc(args.limit) : MAX_PEOPLE;
+      return loadPeople(env.DB, site.id, days, limit, Math.floor(Date.now() / 1000));
     },
   },
   {

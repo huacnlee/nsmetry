@@ -213,14 +213,14 @@ export async function deleteUser(db: D1Database, user: UserRow): Promise<void> {
 export async function accessibleSites(db: D1Database, user: UserRow): Promise<SiteRow[]> {
   if (isOwner(user)) {
     const { results } = await db
-      .prepare('SELECT id, domain, created_at FROM sites ORDER BY domain')
+      .prepare('SELECT id, domain, created_at, keep_user_ids FROM sites ORDER BY domain')
       .all<SiteRow>();
     return results;
   }
 
   const { results } = await db
     .prepare(
-      `SELECT s.id, s.domain, s.created_at
+      `SELECT s.id, s.domain, s.created_at, s.keep_user_ids
        FROM sites s
        JOIN site_access a ON a.site_id = s.id
        WHERE a.user_id = ?

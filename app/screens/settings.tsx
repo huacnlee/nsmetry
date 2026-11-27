@@ -1,7 +1,7 @@
 /**
  * Settings for the current site: whether it is receiving events, how to install it (website, HTTP
- * API, NSH app, JavaScript, an AI agent prompt), this instance's address and version, and removing
- * the site (admin). Account-wide things live elsewhere: people under Team, agents under Agents.
+ * API, NSH app, JavaScript, an AI agent prompt), this instance's address and version, whether to
+ * keep the raw user ids an app sends (admin), and removing the site (admin). Account-wide things live elsewhere: people under Team, agents under Agents.
  *
  * The page is per site, so its title is the site key itself, with a soft status pill beside it
  * (Linear's project header): "Live" when the site sent a page view or an event in the last seven
@@ -92,6 +92,55 @@ function InstancePanel() {
   );
 }
 
+/**
+ * Admin: keep the raw user ids the site's app sends, for the People list on Users. Off by default.
+ * Turning it off deletes the ids already kept, so it asks first.
+ */
+function KeepUserIds(props: { id: number; domain: string; on: boolean }) {
+  const busy = signal(false);
+  const confirming = signal(false);
+  const save = async (enabled: boolean) => {
+    busy.set(true);
+    try {
+      await api.setKeepUserIds(props.id, enabled);
+      confirming.set(false);
+      toast(enabled ? "Keeping user ids" : "User ids deleted", { tone: "ok" });
+      await refreshAccount();
+    } catch (e) {
+      toast("Couldn't change the setting", { body: e instanceof ApiError ? e.message : undefined, tone: "error" });
+    } finally {
+      busy.set(false);
+    }
+  };
+  return (
+    <Panel title="People" testID="keep-user-ids-panel">
+      <View class="gap-1">
+        <Switch
+          testID="keep-user-ids"
+          label="Keep user ids"
+          checked={props.on}
+          disabled={busy()}
+          onChange={(on) => (on ? void save(true) : confirming.set(true))}
+        />
+        <Txt size="caption" tone="muted">
+          Stores the raw user_id your app sends (such as an email) with when each person was first and last seen, to list them under Users. Off by default; turning it off deletes them.
+        </Txt>
+      </View>
+      <ConfirmDialog
+        testID="keep-user-ids-dialog"
+        open={confirming()}
+        title="Stop keeping user ids?"
+        body={`Every user id kept for ${props.domain} is deleted. Active users and retention are not affected.`}
+        confirmLabel="Delete user ids"
+        danger
+        busy={busy()}
+        onConfirm={() => void save(false)}
+        onCancel={() => confirming.set(false)}
+      />
+    </Panel>
+  );
+}
+
 /** Admin: stop tracking this site. The dialog names the site; collected numbers are kept. */
 function RemoveSite(props: { id: number; domain: string }) {
   const open = signal(false);
@@ -171,6 +220,7 @@ export function SettingsScreen() {
           </Panel>
           <InstancePanel />
           <If when={isOwner()}>
+            <KeepUserIds id={site().id} domain={site().domain} on={site().keep_user_ids === 1} />
             <RemoveSite id={site().id} domain={site().domain} />
           </If>
         </ScreenFrame>

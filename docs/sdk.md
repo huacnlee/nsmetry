@@ -106,7 +106,9 @@ Rules worth knowing:
 - **`ts`**: unix seconds, honoured when it falls in the current UTC day; older events are stored at receive time.
 - **`user_id`**: a random id you generate once per install and keep. It enables
   active users and retention, and is hashed per site before it is stored. Never
-  send an email or account id.
+  send an email or account id, unless it is your own app, its users' ids are
+  yours to keep, and you want the People list: then the site's owner turns on
+  **Settings › People › Keep user ids**, and only then is the raw id stored.
 - **`props`**: flat, ≤ 10 keys, string/number/boolean values, strings ≤ 100 characters.
 - **`ua`**: always set it from a native app. The server reads the OS
   (`iOS`, `Android`, `macOS`, `Windows NT`, `Linux`) and device class (`iPhone`/

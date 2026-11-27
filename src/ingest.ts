@@ -277,8 +277,9 @@ interface IdentifiedEvent extends ParsedEvent {
  *
  * Without a user_id nothing changes: the visitor is the daily ip+ua hash. With
  * one, the daily hash is derived from the id instead, and the uid is the
- * site-keyed pseudonym that active users and retention count. The raw id is
- * dropped here; nothing after this function ever sees it.
+ * site-keyed pseudonym that active users and retention count. The raw id
+ * never reaches a raw row or a rollup; only rememberPeople reads it, and only
+ * for a site whose owner turned on keep_user_ids.
  */
 async function identify(
   db: D1Database,
@@ -320,6 +321,32 @@ async function identify(
       return { ...event, visitor, uid, at, ...parseUa(event.userAgent) };
     }),
   );
+}
+
+/** How stale a person's last_seen may get before ingest writes it again. */
+export const LAST_SEEN_GRANULARITY = 3600;
+
+/**
+ * Keep the raw user_id of each person in the request (app_identities), for a
+ * site whose owner turned on keep_user_ids.
+ *
+ * One statement per distinct user_id, batched. The upsert only writes when the
+ * person is new or was last seen over an hour ago, so a busy app pays a
+ * primary-key probe per batch, not a row written. The EXISTS re-checks the
+ * flag in the same statement: an isolate's site cache can lag a minute behind
+ * "turn it off", and a stale yes must not put back the rows that just deleted.
+ */
+async function rememberPeople(db: D1Database, siteId: number, events: IdentifiedEvent[], now: number): Promise<void> {
+  const people = new Map<string, string>();
+  for (const e of events) if (e.userId !== '' && !people.has(e.uid)) people.set(e.uid, e.userId);
+  if (people.size === 0) return;
+  const upsert = db.prepare(
+    `INSERT INTO app_identities (site_id, uid, user_id, first_seen, last_seen)
+     SELECT ?1, ?2, ?3, ?4, ?4 WHERE EXISTS (SELECT 1 FROM sites WHERE id = ?1 AND keep_user_ids = 1)
+     ON CONFLICT (site_id, uid) DO UPDATE SET last_seen = excluded.last_seen, user_id = excluded.user_id
+     WHERE last_seen < excluded.last_seen - ${LAST_SEEN_GRANULARITY}`,
+  );
+  await db.batch([...people].map(([uid, userId]) => upsert.bind(siteId, uid, userId, now)));
 }
 
 type RowValues = (string | number)[];
@@ -479,7 +506,7 @@ async function readJson(request: Request, limit: number): Promise<{ body: unknow
  */
 const SITE_TTL_MS = 5 * 60_000;
 const MISS_TTL_MS = 60_000;
-const siteCache = new Map<string, { id: number | null; at: number }>();
+const siteCache = new Map<string, { id: number | null; keep: boolean; at: number }>();
 let siteGen: { value: string | null; at: number } | null = null;
 
 export function clearSiteCache(): void {
@@ -487,7 +514,7 @@ export function clearSiteCache(): void {
   siteGen = null;
 }
 
-async function cachedSite(db: D1Database, domain: string): Promise<{ id: number } | null> {
+async function cachedSite(db: D1Database, domain: string): Promise<{ id: number; keep: boolean } | null> {
   const now = Date.now();
   if (!siteGen || now - siteGen.at > MISS_TTL_MS) {
     const row = await db.prepare("SELECT value FROM settings WHERE key = 'sites_gen'").first<{ value: string }>();
@@ -496,14 +523,25 @@ async function cachedSite(db: D1Database, domain: string): Promise<{ id: number 
     siteGen = { value, at: now };
   }
   const hit = siteCache.get(domain);
-  if (hit && now - hit.at < (hit.id === null ? MISS_TTL_MS : SITE_TTL_MS)) return hit.id === null ? null : { id: hit.id };
-  const site = await db.prepare('SELECT id FROM sites WHERE domain = ?').bind(domain).first<{ id: number }>();
+  if (hit && now - hit.at < (hit.id === null ? MISS_TTL_MS : SITE_TTL_MS)) {
+    return hit.id === null ? null : { id: hit.id, keep: hit.keep };
+  }
+  // keep_user_ids rides along on the read ingest already makes, so the
+  // setting costs nothing to look up.
+  const site = await db
+    .prepare('SELECT id, keep_user_ids FROM sites WHERE domain = ?')
+    .bind(domain)
+    .first<{ id: number; keep_user_ids: number }>();
   if (siteCache.size > 1000) siteCache.clear();
-  siteCache.set(domain, { id: site?.id ?? null, at: now });
-  return site;
+  const keep = site?.keep_user_ids === 1;
+  siteCache.set(domain, { id: site?.id ?? null, keep, at: now });
+  return site ? { id: site.id, keep } : null;
 }
 
-async function lookupSite(db: D1Database, body: EventPayload): Promise<{ id: number; domain: string } | Response> {
+async function lookupSite(
+  db: D1Database,
+  body: EventPayload,
+): Promise<{ id: number; domain: string; keep: boolean } | Response> {
   const siteKey = pick(body, 'd', 'site', 'domain');
   if (siteKey === undefined) return beaconResponse(400, 'invalid payload');
 
@@ -514,7 +552,7 @@ async function lookupSite(db: D1Database, body: EventPayload): Promise<{ id: num
   // nothing showed up" is the single most common self-hosting failure, and the
   // usual cause is a domain mismatch.
   if (!site) return beaconResponse(404, `site not registered: ${domain}`);
-  return { id: site.id, domain };
+  return { id: site.id, domain, keep: site.keep };
 }
 
 function requestCountry(request: Request): string {
@@ -547,6 +585,7 @@ export async function handleIngest(request: Request, env: Env): Promise<Response
   const [event] = await identify(env.DB, site.id, [{ ...parsed.event, ts: undefined }], ip, now, false);
 
   await insertRows(env.DB, rawTable(partsForTs(now).suffix), [singleRow(site.id, requestCountry(request), event!)]);
+  if (site.keep) await rememberPeople(env.DB, site.id, [event!], now);
   return beaconResponse(204);
 }
 
@@ -592,5 +631,6 @@ export async function handleBatchIngest(request: Request, env: Env): Promise<Res
     rawTable(partsForTs(now).suffix),
     segmentRows(site.id, requestCountry(request), events, now),
   );
+  if (site.keep) await rememberPeople(env.DB, site.id, events, now);
   return beaconResponse(204);
 }

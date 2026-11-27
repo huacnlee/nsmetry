@@ -26,6 +26,7 @@
  * once an hour per token (see sessions.ts).
  */
 
+import { signInCodeMail } from './codemail';
 import { type Delivery, deliverMail } from './mail';
 import { createSession } from './sessions';
 import {
@@ -311,14 +312,7 @@ export async function startSignIn(
     .run();
 
   try {
-    const delivery = await deliverMail(
-      env,
-      email,
-      `Your NsMetry sign-in code: ${code}`,
-      `Your NsMetry sign-in code is:\n\n    ${code}\n\nIt is valid for 10 minutes.\n\n` +
-        `If you did not ask for it, ignore this email — nobody can sign in without the code.\n`,
-      { code },
-    );
+    const delivery = await deliverMail(env, email, signInCodeMail(code), { code });
     if (delivery === 'log') {
       return {
         status: 200,

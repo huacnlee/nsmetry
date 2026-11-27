@@ -8,7 +8,7 @@
  * content reveals with a clipped, critically damped height spring (NSH `Collapsible` `reveal`).
  */
 import type { JSX } from "nsh";
-import { View } from "nsh";
+import { Scroll, View } from "nsh";
 import { Collapsible, Tab, Tabs } from "nsh/base";
 import { Glyph, type GlyphName } from "./icons";
 import { Txt } from "./text";
@@ -29,33 +29,38 @@ export function UnderlineTabs<T extends string>(props: {
   accessibilityLabel: string;
   testID?: string;
 }) {
+  // More tabs than a phone's width scroll sideways under one border instead of running off the edge.
   return (
-    <Tabs
-      testID={props.testID}
-      orientation="horizontal"
-      accessibilityLabel={props.accessibilityLabel}
-      class="flex-row gap-1 border-b border-border"
-      indicatorClass="bottom-0 mx-2 rounded-(--radius-pill) bg-foreground"
-      indicatorStyle={{ height: size.indicator }}
-    >
-      <Each of={props.options}>
-        {(o) => (
-          <Tab
-            testID={props.testID ? `${props.testID}-${o().value}` : undefined}
-            selected={o().value === props.value}
-            accessibilityLabel={o().label}
-            onPress={() => o().value !== props.value && props.onChange(o().value)}
-            focusVisibleStyle={focusRing()}
-            class="flex-row items-center gap-1.5 rounded-(--radius) px-2 hover:bg-hover motion-reduce:transition-none"
-            style={[interactiveTransition, { height: size.tabStrip }]}
-          >
-            <If when={o().icon}>{(n) => <Glyph name={n()} size={size.iconSm} tone={o().value === props.value ? "default" : "muted"} />}</If>
-            <Txt weight="medium" tone={o().value === props.value ? "default" : "muted"}>{o().label}</Txt>
-            <If when={o().count != null}><Txt size="caption" tone="faint" numeric>{String(o().count)}</Txt></If>
-          </Tab>
-        )}
-      </Each>
-    </Tabs>
+    <View class="border-b border-border">
+      <Scroll horizontal scrollbar={false}>
+        <Tabs
+          testID={props.testID}
+          orientation="horizontal"
+          accessibilityLabel={props.accessibilityLabel}
+          class="flex-row gap-1"
+          indicatorClass="bottom-0 mx-2 rounded-(--radius-pill) bg-foreground"
+          indicatorStyle={{ height: size.indicator }}
+        >
+          <Each of={props.options}>
+            {(o) => (
+              <Tab
+                testID={props.testID ? `${props.testID}-${o().value}` : undefined}
+                selected={o().value === props.value}
+                accessibilityLabel={o().label}
+                onPress={() => o().value !== props.value && props.onChange(o().value)}
+                focusVisibleStyle={focusRing()}
+                class="flex-row items-center gap-1.5 rounded-(--radius) px-2 hover:bg-hover motion-reduce:transition-none"
+                style={[interactiveTransition, { height: size.tabStrip }]}
+              >
+                <If when={o().icon}>{(n) => <Glyph name={n()} size={size.iconSm} tone={o().value === props.value ? "default" : "muted"} />}</If>
+                <Txt weight="medium" tone={o().value === props.value ? "default" : "muted"}>{o().label}</Txt>
+                <If when={o().count != null}><Txt size="caption" tone="faint" numeric>{String(o().count)}</Txt></If>
+              </Tab>
+            )}
+          </Each>
+        </Tabs>
+      </Scroll>
+    </View>
   );
 }
 

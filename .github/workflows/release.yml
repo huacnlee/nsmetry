@@ -229,7 +229,8 @@ jobs:
   # publish) and the NPM_TOKEN secret is set (a granular token allowed to publish nsmetry); otherwise it says why it
   # skipped. The package carries a provenance statement linking it to this workflow run.
   npm:
-    if: github.ref_type == 'tag'
+    # A tag publishes; a run by hand on main retries a publish that failed (skipped when the version is on npm).
+    if: github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -241,7 +242,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           registry-url: https://registry.npmjs.org
       - name: Publish the nsmetry package when its version is new
         env:

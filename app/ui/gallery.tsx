@@ -9,7 +9,7 @@ import {
   ActionMenu, AddFilterChip, Avatar, AvatarButton, Badge, BarRow, Bars, Button, ButtonRow, Card, Checkbox, CodeBlock, ConfirmDialog, DataTable, EmptyState,
   Field, FilterChip, GroupSection, Heading, IconButton, InlineCode, MenuRow, MetricTile, Modal, NavButton, NavItem, NavList, Panel, PillTabs,
   PageHeader, PageStack, PropertyList, Segmented, Select, Separator, ShareBar, Skeleton, StackPage, SheetNavRow, Sparkline, Spinner, StatusPill, Switch, TabBarButton, TabBarItem, TabBarList, Tag, Textarea,
-  TextInput, TimeSeries, Timeline, toast, Txt, UnderlineTabs, ChartLegend, Heatmap, WorldMap, size, width,
+  CodeInput, TextInput, TimeSeries, Timeline, toast, Txt, UnderlineTabs, ChartLegend, Heatmap, WorldMap, size, width,
 } from "./index";
 
 const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -33,6 +33,7 @@ export function Gallery(props: { onAppearance?: (a: "light" | "dark") => void })
   const tab = signal<"all" | "web" | "app">("all");
   const choice = signal<"visitors" | "views">("visitors");
   const text = signal("");
+  const otp = signal("1234");
   const group = signal(true);
   const confirm = signal(false);
   const modal = signal(false);
@@ -100,8 +101,11 @@ export function Gallery(props: { onAppearance?: (a: "light" | "dark") => void })
           <Field label="Email" hint="The address you were invited with.">
             <TextInput value={text()} onChange={(v) => text.set(v)} placeholder="you@example.com" keyboard="email-address" plain />
           </Field>
+          <Field label="Code">
+            <CodeInput length={8} value={otp()} onChange={(v) => otp.set(v)} />
+          </Field>
           <Field label="Code" error="That code is not right.">
-            <TextInput value="ABCD-EFGH" onChange={() => {}} invalid />
+            <CodeInput length={8} value="12345678" onChange={() => {}} invalid />
           </Field>
           <Field label="Disabled">
             <TextInput value="stats.example.com" onChange={() => {}} disabled />

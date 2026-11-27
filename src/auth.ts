@@ -9,8 +9,8 @@
  * the variable and redeploying moves admin rights without touching the data.
  *
  * The flow is modelled on noop's (cloud/src/authcode.ts and the /api/auth/*
- * handlers): an 8-character code from an alphabet with no look-alikes, stored
- * only as a hash, valid for ten minutes, five tries per code, caps on mails per
+ * handlers): an 8-digit code (digits only, so phones bring up the number pad
+ * and the app's one-time-code cells take it), stored only as a hash, valid for ten minutes, five tries per code, caps on mails per
  * hour and a cap on wrong guesses per UTC day.
  *
  * The caps are keyed by the caller's IP (and, for mails, also by address),
@@ -18,7 +18,7 @@
  * address is easy to guess, so a global cap would let any stranger lock the
  * one real user out for the day; keyed per IP, a stranger only locks out
  * themselves. Guessing stays hopeless regardless: every code allows five
- * tries, spent atomically before the comparison, against 31^8 possibilities.
+ * tries, spent atomically before the comparison, against 10^8 possibilities.
  *
  * Everything here is shaped by the free plan's 100k rows written per day: a
  * sign-in costs a handful of writes (the code row, the send counter, the
@@ -101,20 +101,20 @@ export async function hmacKey(secret: string): Promise<CryptoKey> {
 
 /* ----------------------------------------------------------------- codes -- */
 
-// 31 letters and digits that cannot be misread (no 0/O, 1/I/L), eight of them:
-// 31^8 ≈ 8.5 × 10^11. With five tries per code and a daily cap on failures,
-// guessing never adds up to anything.
-export const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+// Eight digits: 10^8 codes. Each allows five tries, a new one takes a minute and
+// an address gets at most 30 an hour, so even an attacker with many IPs makes
+// at most ~3,600 guesses a day at one address: odds of about 1 in 28,000.
+export const CODE_ALPHABET = '0123456789';
 export const CODE_LENGTH = 8;
 const CODE_PATTERN = new RegExp(`^[${CODE_ALPHABET}]{${CODE_LENGTH}}$`);
 
-/** Unbiased: bytes ≥ 248 (= 8 × 31) are redrawn rather than folded. */
+/** Unbiased: bytes ≥ 250 (= 25 × 10) are redrawn rather than folded. */
 export function newCode(): string {
   let code = '';
   const byte = new Uint8Array(1);
   while (code.length < CODE_LENGTH) {
     crypto.getRandomValues(byte);
-    if (byte[0]! < 248) code += CODE_ALPHABET[byte[0]! % 31];
+    if (byte[0]! < 250) code += CODE_ALPHABET[byte[0]! % 10];
   }
   return code;
 }
@@ -246,6 +246,8 @@ async function maySignIn(env: Env, email: string): Promise<boolean> {
 export interface StartOk {
   ok: true;
   delivery: Delivery;
+  /** How many digits the code has, so the app shows that many cells. */
+  codeDigits: number;
   /** Set when the code went to the logs, saying where to read it. */
   message?: string;
 }
@@ -325,13 +327,14 @@ export async function startSignIn(
         body: {
           ok: true,
           delivery,
+          codeDigits: CODE_LENGTH,
           message:
             'Email is not set up on this instance, so the code was written to the Worker logs. ' +
             'Read it with `wrangler tail`, or under Workers → nsmetry → Logs in the Cloudflare dashboard.',
         },
       };
     }
-    return { status: 200, body: { ok: true, delivery } };
+    return { status: 200, body: { ok: true, delivery, codeDigits: CODE_LENGTH } };
   } catch (error) {
     console.error(JSON.stringify({ level: 'error', event: 'sign-in-mail', message: String(error) }));
     // The code never arrived, so it must not stay redeemable.
@@ -364,7 +367,7 @@ export async function checkCode(
   const email = normalizeEmail(typeof rawEmail === 'string' ? rawEmail : '');
   const code = normalizeCode(rawCode);
   if (!isValidEmail(email) || !CODE_PATTERN.test(code)) {
-    return { status: 400, error: 'enter your email and the 8-character code' };
+    return { status: 400, error: 'enter your email and the 8-digit code' };
   }
 
   const db = env.DB;

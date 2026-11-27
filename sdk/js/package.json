@@ -3,6 +3,13 @@
   "version": "0.1.0",
   "description": "Event analytics client for a self-hosted NsMetry instance: batched, retrying, dependency-free. Browsers, Node, Bun, Deno, React Native, Electron and Workers.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/huacnlee/nsmetry.git",
+    "directory": "sdk/js"
+  },
+  "homepage": "https://github.com/huacnlee/nsmetry/tree/main/sdk/js#readme",
+  "bugs": "https://github.com/huacnlee/nsmetry/issues",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -17,7 +24,8 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "sideEffects": false,
   "keywords": [
@@ -37,10 +45,15 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --config vitest.config.ts",
     "sync:nsh": "cp src/core.ts ../nsh/src/core.ts",
-    "prepublishOnly": "npm run typecheck && npm test && npm run build"
+    "prepublishOnly": "npm run typecheck && npm test && npm run build",
+    "check:pack": "sh scripts/check-pack.sh"
   },
   "devDependencies": {
+    "@types/node": "^26.1.2",
     "typescript": "^5",
     "vitest": "^4.1.10"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

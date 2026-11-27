@@ -1,7 +1,7 @@
 /**
  * How to measure the current site: a prompt for a coding agent (Claude Code, Codex, Cursor) to paste
  * in the project, one tab per kind of project plus "Not sure", which lets the agent pick. Each prompt
- * carries this instance's address, the site key, the batching and privacy rules, and how to verify.
+ * carries this instance's address, the site key, the few rules that matter, a docs link and how to verify.
  * Nobody pastes code by hand any more; the agent does the instrumenting.
  *
  * The first tab shown follows the site key: a domain (`example.com`) opens on Website, a bare name

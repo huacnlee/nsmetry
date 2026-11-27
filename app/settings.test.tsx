@@ -46,7 +46,6 @@ describe("install", () => {
     await a.waitFor("text:Live");
     await a.press("id:copy-prompt-website");
     await a.waitUntil(() => (a.clipboard() ?? "").includes(`<script defer src="${S}/em.js" data-domain="example.com"></script>`));
-    expect(a.clipboard() ?? "").toContain("Site key: example.com");
     expect(a.clipboard() ?? "").not.toContain("/api/events/batch"); // a website has no batching to do
     a.dispose();
   });
@@ -67,7 +66,7 @@ describe("install", () => {
     await a.waitFor("id:install-any");
     await a.waitFor("text:Live");
     await a.press("id:copy-prompt-any");
-    await a.waitUntil(() => (a.clipboard() ?? "").includes("Site key: disktree"));
+    await a.waitUntil(() => (a.clipboard() ?? "").includes("Site: disktree"));
     for (const part of ["nsh add nsmetry", "npm install nsmetry", "data-domain=\"disktree\"", "/api/events/batch"]) {
       expect(a.clipboard() ?? "").toContain(part);
     }

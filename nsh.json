@@ -1,7 +1,7 @@
 {
   "name": "NsMetry",
   "id": "dev.nsmetry.app",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "build": 1,
   "icon": {
     "ios": "app/icon/icon-ios.png",

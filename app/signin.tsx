@@ -11,6 +11,7 @@
  */
 import { createMotion, signal, View } from "nsh";
 import { ApiError } from "./api";
+import { openProjectLink, projectLinks } from "./shell/controls";
 import { Brand } from "./shell/sidebar";
 import { currentServer, enterDemo, requestCode, serverIsFixed, setServer, signOutReason, verifyCode } from "./store";
 import { Button, Card, Field, Heading, motion, TextInput, Txt } from "./ui";
@@ -122,6 +123,11 @@ export function SignIn() {
             />
           </If>
         </Card>
+        <View class="flex-row justify-center gap-1">
+          <Each of={projectLinks}>
+            {(l) => <Button testID={`signin-${l().id}`} label={l().label} icon={l().icon} variant="ghost" size="sm" onPress={() => openProjectLink(l().url)} />}
+          </Each>
+        </View>
       </View>
     </View>
   );

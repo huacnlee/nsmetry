@@ -1,5 +1,5 @@
 /**
- * Menus, popovers and selects (allsum §3: an elevated surface with the float shadow, 4pt padding,
+ * Menus, popovers and selects (allsum §3: an elevated surface with a light popup shadow, 4pt padding,
  * 8pt corners; rows at least 30pt, 13pt text, 6pt corners; a separator inset 8pt).
  *
  * `nsh/base` Menu brings the behavior (keyboard, typeahead, dismissal, a bottom sheet on phones);
@@ -31,7 +31,7 @@ const popupEnd: ViewStyle = { opacity: 0, transform: [{ scale: 0.98 }], transiti
 /** The props every `Menu` / `Popover` in the app takes, spread onto it. */
 export const popupProps = () => ({
   popupClass,
-  popupStyle: [{ minWidth: 200 }, elevation.float(), popupMotion] as ViewStyle[],
+  popupStyle: [{ minWidth: 200 }, elevation.popup(), popupMotion] as ViewStyle[],
   popupStartingStyle: popupStart,
   popupEndingStyle: popupEnd,
   offset: 4,
@@ -195,7 +195,7 @@ export function PopoverPanel(props: {
       open={props.open}
       onOpenChange={(e) => props.onOpenChange?.(e.open)}
       trigger={props.trigger}
-      popupStyle={[{ minWidth: width.picker, padding: 12 }, elevation.float(), popupMotion]}
+      popupStyle={[{ minWidth: width.picker, padding: 12 }, elevation.popup(), popupMotion]}
     >
       {props.children}
     </Popover>

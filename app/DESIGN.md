@@ -27,7 +27,7 @@ Screens never pick a color, size, radius or duration of their own: they compose 
 | `ok` / `warn` / `bad` | green / amber / red | lighter in dark | Status only (deltas, pills, errors) |
 | `compare` | faint | faint | The dashed comparison series |
 | `ring` | brand | brand | Keyboard focus ring |
-| `scrim`, `shadow`, `shadow-near` | | | Backdrops and the one float shadow |
+| `scrim`, `shadow`, `shadow-near` | | | Backdrops and the float/popup shadows |
 
 ### Geometry (`app/ui/tokens.ts`)
 
@@ -42,8 +42,9 @@ Screens never pick a color, size, radius or duration of their own: they compose 
   (`pad`): control 12, compact 8, field 10. Every control reads these; no literal sizes in `app/ui`.
 - Touch targets: anything pressable is at least 44pt (iOS) / 48dp (Android) tall on touch screens,
   or reaches it with `hitSlop` (icon buttons, chips, checkbox, switch).
-- Elevation: flat surfaces with a 1px border; only floating things (menus, popovers, dialogs,
-  toasts) get `elevation.float()`; the selected segment gets `elevation.raised()`.
+- Elevation: flat surfaces with a 1px border; only floating things get a shadow: dialogs and toasts
+  `elevation.float()`, menus, selects and popovers the lighter `elevation.popup()` (their border
+  already sets them apart); the selected segment gets `elevation.raised()`.
 - System fonts only; monospace (`font-mono`) for ids, versions, code and secondary table columns.
 
 ### Motion (`motion` in `app/ui/tokens.ts`)
@@ -81,7 +82,7 @@ Collapsible reveal, Sheet) and plots at once under reduced motion.
 | `ActionMenu` | menu.tsx | `Menu` with the app's popup look; trigger a `Button`, `NavButton` or `AvatarButton` |
 | `AvatarButton` | button.tsx | Round initial on the pressed wash, hover, press 0.95, focus ring (the account menu) |
 | `Select` | menu.tsx | On `nsh/base` Select: ghost / outline trigger, sm / md, placeholder, searchable, groups, disabled items, disabled; a sheet on phones |
-| `MenuRow`, `MenuSep`, `MenuLabel`, `PopoverPanel` | menu.tsx | Action menus on `Menu`: checked, icon, hint, danger, disabled rows; 4pt padding, 8pt radius, float shadow |
+| `MenuRow`, `MenuSep`, `MenuLabel`, `PopoverPanel` | menu.tsx | Action menus on `Menu`: checked, icon, hint, danger, disabled rows; 4pt padding, 8pt radius, popup shadow |
 | `Card`, `Panel`, `Divider` | surfaces.tsx | Inset |
 | `Badge` | surfaces.tsx | 18pt; neutral, brand, ok, bad |
 | `PillTabs` | surfaces.tsx | Selected on the pressed wash (sliding indicator); hover wash, press scale |

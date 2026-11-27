@@ -2,10 +2,10 @@
  * The install prompts the Settings screen shows, built from this instance and the current site. Pure
  * functions, so tests can read them and every tab says the same thing.
  *
- * Everything here restates docs/api.md ("Ingest") and docs/sdk.md; when those change, change this.
- * The rules an app must follow to stay inside Cloudflare's free plan (batches of at most 50, one flush
- * per ~30 s or on background) are spelled out in every tab that sends events, because a client that
- * sends one request per event is the one thing that can exhaust the instance's daily budget.
+ * The prompts stay short: what to install, the endpoint and site, the few rules an agent would get
+ * wrong on its own, and how to check. Everything else (batching, retries, the queue) is the SDK's job
+ * and is in its README, which the prompt links. Only the HTTP prompt states the batching rules, since
+ * there the agent writes the queue itself; they restate docs/sdk.md ("Any other language").
  */
 
 export interface InstallTarget {
@@ -31,71 +31,108 @@ export const serverOr = (server: string) => server || "https://stats.example.com
 /** The kind of client a prompt is written for; `any` lets the agent pick from the project. */
 export type PromptKind = "any" | "website" | "js" | "nsh" | "http";
 
-function setupFor(kind: PromptKind, t: InstallTarget, server: string): string {
-  const nsh = `   - NSH app (nsh.json present): run \`nsh add nsmetry\`, then
-     createNsMetry({ endpoint: "${server}", site: "${t.site}", persistUserId: true }),
-     call useNsMetry(client) and useScreenTracking(client, <reactive path>) in the root component.
-     With a NavStack, pass navStackPath(nav, (r) => \`/\${r.name}\`) as the path.`;
-  const js = `   - JavaScript / TypeScript (browser app, Node, Bun, Deno, Electron, React Native, Workers): \`npm install nsmetry\`, then
-     createNsMetry({ endpoint: "${server}", site: "${t.site}", appVersion: <the app's version>, persistUserId: true });
-     client.screen("/path") per screen or route, client.track("name", props) for custom events.
-     On React Native pass AsyncStorage as storage and flush when AppState leaves "active".`;
-  const website = `   - A website: add <script defer src="${t.trackerSrc}" data-domain="${t.site}"></script> to the <head> of every page
-     (the layout or template every page shares). It counts page views by itself: no cookies, nothing stored about visitors.
-     For a custom event, call window.nsmetry?.("signup") where it happens (a name only; the script sends no props).`;
-  const http = `   - Any other language: POST JSON to ${server}/api/events/batch as
-     {"site":"${t.site}","events":[{"name":"screen_view","url":"/path","ts":<unix s>,"user_id":"…","app_version":"…","ua":"…","props":{…}}]}
-     with Content-Type text/plain. Write a small queue like the SDKs' (the batching rules below).`;
-  switch (kind) {
-    case "website": return `1. Set it up (this project is a website):\n${website}`;
-    case "js": return `1. Set it up (this project is JavaScript / TypeScript):\n${js}`;
-    case "nsh": return `1. Set it up (this project is an NSH app):\n${nsh}`;
-    case "http": return `1. Set it up (this project has no NsMetry SDK; use the HTTP API):\n${http}`;
-    default: return `1. Look at the project and pick the client that fits:\n${nsh}\n${js}\n${website}\n${http}`;
-  }
+const docs = "https://github.com/huacnlee/nsmetry/blob/main";
+const nshDocs = `${docs}/sdk/nsh/README.md`;
+const jsDocs = `${docs}/sdk/js/README.md`;
+const httpDocs = `${docs}/docs/sdk.md#any-other-language`;
+
+const scriptTag = (t: InstallTarget) => `<script defer src="${t.trackerSrc}" data-domain="${t.site}"></script>`;
+const client = (server: string, t: InstallTarget, extra = "") =>
+  `createNsMetry({ endpoint: "${server}", site: "${t.site}",${extra} persistUserId: true })`;
+
+/** The rules for anything that sends app events; a website's script follows them by itself. */
+const appRules = `Rules:
+- One screen view per screen or route. No ids in paths ("/message", not "/message/8812").
+- Custom events only for actions worth counting, snake_case names.
+- No personal data (emails, names, file names, search text) in event names, paths or props.`;
+
+const verify = (server: string, what: string) =>
+  `Verify: ${what}; the request to ${server} should return 204 (404 means the site is wrong). Don't send test events: they stay in the numbers.`;
+
+const verifyApp = (server: string) => verify(server, "run the app, open a few screens and send it to the background");
+
+function websitePrompt(t: InstallTarget, server: string): string {
+  return `Add NsMetry analytics to this website.
+
+Add this to the <head> of every page (the layout all pages share):
+${scriptTag(t)}
+
+It counts page views by itself, with no cookies. For a custom event, call window.nsmetry?.("signup") where it happens.
+
+${verify(server, "open a few pages")}`;
+}
+
+function nshPrompt(t: InstallTarget, server: string): string {
+  return `Add NsMetry analytics to this NSH app.
+
+1. Run \`nsh add nsmetry\`.
+2. Create one client: ${client(server, t)}
+3. In the root component call useNsMetry(client) and useScreenTracking(client, <current path>). With a NavStack, pass navStackPath(nav, (r) => \`/\${r.name}\`).
+4. Track custom events with client.track("name", props).
+
+${appRules}
+
+Docs: ${nshDocs}
+${verifyApp(server)}`;
+}
+
+function jsPrompt(t: InstallTarget, server: string): string {
+  return `Add NsMetry analytics to this JavaScript / TypeScript app.
+
+1. Run \`npm install nsmetry\`.
+2. Create one client: ${client(server, t, " appVersion: <the app's version>,")}
+3. Call client.screen("/path") on each screen or route, client.track("name", props) for custom events.
+
+${appRules}
+
+Docs (React Native, Workers and other runtimes): ${jsDocs}
+${verifyApp(server)}`;
+}
+
+function httpPrompt(t: InstallTarget, server: string): string {
+  return `Add NsMetry analytics to this app over HTTP (there is no SDK for its language).
+
+POST batches to ${server}/api/events/batch:
+{"site":"${t.site}","events":[{"name":"screen_view","url":"/settings","ts":<unix seconds>,"user_id":"<random id, made once per install>","app_version":"1.2.3","ua":"AppName/1.2.3 (macOS 15.1)"}]}
+
+Batching: queue events and send at most 50 per request, about every 5 minutes and when the app goes to the background; never one request per event. 204 = stored; drop the batch on 400 or 404; retry 429, 5xx and network errors with backoff.
+
+${appRules}
+- user_id is never an email or account id.
+
+Docs (all fields, Swift and Kotlin clients): ${httpDocs}
+${verifyApp(server)}`;
+}
+
+function anyPrompt(t: InstallTarget, server: string): string {
+  return `Add NsMetry analytics to this project.
+
+Endpoint: ${server}
+Site: ${t.site}
+
+Pick the setup that fits the project:
+- NSH app (nsh.json): \`nsh add nsmetry\`, then ${client(server, t)}. Docs: ${nshDocs}
+- JavaScript / TypeScript: \`npm install nsmetry\`, same client. Docs: ${jsDocs}
+- Website: add ${scriptTag(t)} to the <head> of every page.
+- Anything else: POST batches to ${server}/api/events/batch. Docs: ${httpDocs}
+
+${appRules}
+
+${verify(server, "run it and open a few screens or pages")}`;
 }
 
 /**
  * A prompt a coding agent (Claude Code, Codex, Cursor) follows to instrument a project with this
- * instance: the endpoint, the site key, the budget and privacy rules, and how to check the result.
- * `kind` narrows step 1 to one client; `any` (for someone unsure what the project is) lists them all.
+ * instance. `kind` writes it for one client; `any` (for someone unsure what the project is) lists
+ * them all, one line each, and lets the agent pick.
  */
 export function agentPrompt(t: InstallTarget, kind: PromptKind = "any"): string {
   const server = serverOr(t.server);
-  const website = kind === "website";
-  const batching = website ? "" : `
-2. Batching (the instance runs on Cloudflare's free plan; requests are the budget):
-   - Queue events in memory. Send at most 50 per request to /api/events/batch.
-   - Flush every ~30 seconds while events are waiting, as soon as 50 are queued, and when the app goes to the background or quits. Never one request per event; never a timer that fires when the queue is empty.
-   - 204 = stored. 400 or 404 = drop the batch (404 means the site key is wrong). Retry 429, 5xx and network errors with exponential backoff. Keep at most 1000 queued events, dropping the oldest.
-`;
-  const userId = website ? "" : `
-4. user_id:
-   - A random UUID generated once per install and persisted (the SDKs do this with persistUserId: true).
-   - Never an email, account id, phone number, device serial or advertising id. The server hashes it per site and never stores it raw.
-`;
-  return `Add privacy-first analytics to this project with NsMetry, a self-hosted instance.
-
-Instance: ${server}
-Site key: ${t.site}  (send it exactly as "site"; it is already registered)
-
-${setupFor(kind, t, server)}
-${batching}
-3. What to send:
-   - A "screen_view" with url "/<screen>" for each screen or route${website ? " (the script does this for page views)" : ""}. Keep ids out of paths ("/message", not "/message/8812").
-   - Custom events only for things worth reading later: a finished export, a purchase, an error. snake_case names.${website ? "" : `
-   - props: flat, at most 10 keys, string / number / boolean values, strings up to 100 characters.
-   - app_version: the app's own version. Native apps: ua like "AppName/1.2.3 (macOS 15.1)" or "AppName/1.2.3 (iPhone; iOS 18.1; Mobile)"; never include the words bot, monitor, preview or scanner.`}
-${userId}
-5. Privacy rules:
-   - No personal data anywhere: no emails, names, IP addresses, tokens, file names, search text or other free text in event names, paths or props.
-   - No cookies and no fingerprinting.${website ? "" : " If the app has an analytics opt-out, call setEnabled(false) when it is off."}
-
-6. Verify:
-   - Typecheck and run the project's tests.
-   - ${website ? "Open the site, visit two or three pages" : "Run the app, open two or three screens, then send it to the background (or call flush())"}. Confirm the request to ${server} answered 204 (a 404 means the site key is wrong).
-   - The events appear in the NsMetry app under Pages and Events for "${t.site}" within a minute. If the NsMetry MCP server (${server}/mcp) is connected, call get_breakdown for this site with dim "path" or "event" to check.
-   - Do not send test events to check the endpoint: they would stay in the numbers.
-
-Report which files you changed, which screens and events are tracked${website ? "" : ", and where the user id is stored"}.`.replace(/\n{3,}/g, "\n\n");
+  switch (kind) {
+    case "website": return websitePrompt(t, server);
+    case "nsh": return nshPrompt(t, server);
+    case "js": return jsPrompt(t, server);
+    case "http": return httpPrompt(t, server);
+    default: return anyPrompt(t, server);
+  }
 }

@@ -19,13 +19,14 @@
  *     which is exactly the person who could change ADMIN_EMAIL anyway.
  *
  * The SMTP client is a port of noop's cloud/src/smtp.ts (same author, MIT):
- * just enough of the protocol over `cloudflare:sockets` to send one plain-text
- * UTF-8 message, without pulling a mail library into the Worker.
+ * just enough of the protocol over `cloudflare:sockets` to send one UTF-8
+ * message (plain text, or text and HTML), without pulling a mail library into the Worker.
  */
 
 import { connect } from 'cloudflare:sockets';
 
 import { authEnv } from './auth';
+import { type Mail, mimeBody } from './codemail';
 
 export type Delivery = 'smtp' | 'email' | 'log';
 
@@ -76,24 +77,19 @@ export function deliveryMethod(env: Env): Delivery {
 }
 
 /**
- * Send one plain-text mail. `logOnly` is what to print when no transport is
- * configured — the code itself, not the whole mail, so the log line is short.
+ * Send one mail. `logOnly` is what to print when no transport is configured —
+ * the code itself, not the whole mail, so the log line is short.
  */
-export async function deliverMail(
-  env: Env,
-  to: string,
-  subject: string,
-  text: string,
-  logOnly: Record<string, string>,
-): Promise<Delivery> {
+export async function deliverMail(env: Env, to: string, mail: Mail, logOnly: Record<string, string>): Promise<Delivery> {
   const e = authEnv(env);
   const smtp = parseSmtpConfig(e.SMTP);
   if (smtp) {
-    await sendSmtp(smtp, to, subject, text);
+    await sendSmtp(smtp, to, mail);
     return 'smtp';
   }
   if (e.EMAIL && e.MAIL_FROM) {
-    await e.EMAIL.send({ from: { name: 'NsMetry', email: e.MAIL_FROM }, to, subject, text });
+    const { subject, text, html } = mail;
+    await e.EMAIL.send({ from: { name: 'NsMetry', email: e.MAIL_FROM }, to, subject, text, ...(html ? { html } : {}) });
     return 'email';
   }
   console.log(
@@ -168,7 +164,7 @@ class Connection {
   }
 }
 
-export async function sendSmtp(config: SmtpConfig, to: string, subject: string, text: string): Promise<void> {
+export async function sendSmtp(config: SmtpConfig, to: string, { subject, text, html }: Mail): Promise<void> {
   const port = config.port ?? 465;
   const implicit = config.secure ?? port === 465;
   const local = config.host === 'localhost' || config.host === '127.0.0.1';
@@ -216,22 +212,17 @@ export async function sendSmtp(config: SmtpConfig, to: string, subject: string, 
     await conn.command('DATA', 354);
 
     const domain = bareAddress(from).split('@')[1] ?? 'nsmetry';
-    // Base64 lines never start with ".", but the dot-stuffing below stays
-    // anyway so a future change to the body cannot end the DATA block early.
-    const body = b64(text).replace(/.{1,76}/g, '$&\r\n').trimEnd();
     const message = [
       `From: ${from}`,
       `To: ${to}`,
       `Subject: =?UTF-8?B?${b64(subject)}?=`,
       `Date: ${new Date().toUTCString().replace('GMT', '+0000')}`,
       `Message-ID: <${crypto.randomUUID()}@${domain}>`,
-      'MIME-Version: 1.0',
-      'Content-Type: text/plain; charset=UTF-8',
-      'Content-Transfer-Encoding: base64',
-      '',
-      body,
+      ...mimeBody(text, html),
     ]
       .join('\r\n')
+      // Base64 lines and boundaries never start with ".", but the dot-stuffing
+      // stays so a future change to the body cannot end the DATA block early.
       .replace(/\r\n\./g, '\r\n..');
 
     await conn.send(`${message}\r\n.`);

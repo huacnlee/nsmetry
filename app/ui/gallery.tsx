@@ -33,7 +33,7 @@ export function Gallery(props: { onAppearance?: (a: "light" | "dark") => void })
   const tab = signal<"all" | "web" | "app">("all");
   const choice = signal<"visitors" | "views">("visitors");
   const text = signal("");
-  const otp = signal("1234");
+  const otp = signal("AB12");
   const group = signal(true);
   const confirm = signal(false);
   const modal = signal(false);
@@ -105,7 +105,7 @@ export function Gallery(props: { onAppearance?: (a: "light" | "dark") => void })
             <CodeInput length={8} value={otp()} onChange={(v) => otp.set(v)} />
           </Field>
           <Field label="Code" error="That code is not right.">
-            <CodeInput length={8} value="12345678" onChange={() => {}} invalid />
+            <CodeInput length={8} value="ABCD2345" onChange={() => {}} invalid />
           </Field>
           <Field label="Disabled">
             <TextInput value="stats.example.com" onChange={() => {}} disabled />

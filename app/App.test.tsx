@@ -16,7 +16,7 @@ function server(over: Routes = {}): Routes {
   return {
     [`POST ${S}/api/auth/start`]: { body: { ok: true, delivery: "email" } },
     [`POST ${S}/api/auth/verify`]: (r) =>
-      JSON.parse(r.body ?? "{}").code === "123456"
+      JSON.parse(r.body ?? "{}").code === "ABCD2345"
         ? { body: { token: "tok-1", user: owner } }
         : { status: 401, body: { error: "that code is not right" } },
     [`POST ${S}/api/auth/logout`]: { body: { ok: true } },
@@ -52,8 +52,7 @@ describe("sign-in", () => {
     await app.press("id:send-code");
     await app.waitFor("id:code");
     expect(hasText(app.texts(), "We sent a sign-in code")).toBe(true);
-    await app.type("id:code", "123456");
-    await app.press("id:verify");
+    await app.type("id:code", "ABCD2345");
     await app.waitFor("id:screen-overview");
     expect(app.storage()[`session:${S}`]).toContain("tok-1");
     expect(app.storage().server).toBe(S);
@@ -62,7 +61,19 @@ describe("sign-in", () => {
     app.dispose();
   });
 
-  test("an 8-digit code goes into cells and signs in as soon as the last one fills", async () => {
+  test("a code goes into cells, letters upper-cased, and signs in as soon as the last one fills", async () => {
+    const app = await open("./App.tsx", { network: server(), storage: { server: S } });
+    await app.type("id:email", "owner@example.com");
+    await app.press("id:send-code");
+    await app.waitFor("id:code");
+    await app.type("id:code", "ab-cd 2345");
+    await app.waitFor("id:screen-overview");
+    const verify = app.requests().find((r) => r.url === `${S}/api/auth/verify`);
+    expect(JSON.parse(verify?.body ?? "{}").code).toBe("ABCD2345");
+    app.dispose();
+  });
+
+  test("a server sending digit-only codes (0.1.2, 0.1.3) still signs in through the same cells", async () => {
     const digits = server({
       [`POST ${S}/api/auth/start`]: { body: { ok: true, delivery: "email", codeDigits: 8 } },
       [`POST ${S}/api/auth/verify`]: (r) =>
@@ -74,41 +85,36 @@ describe("sign-in", () => {
     await app.type("id:email", "owner@example.com");
     await app.press("id:send-code");
     await app.waitFor("id:code");
-    await app.type("id:code", "1234abcd5678");
+    await app.type("id:code", "12345678");
     await app.waitFor("id:screen-overview");
-    const verify = app.requests().find((r) => r.url === `${S}/api/auth/verify`);
-    expect(JSON.parse(verify?.body ?? "{}").code).toBe("12345678");
     app.dispose();
   });
 
-  test("a wrong 8-digit code says so and empties the cells for another try", async () => {
-    const app = await open("./App.tsx", {
-      storage: { server: S },
-      network: server({ [`POST ${S}/api/auth/start`]: { body: { ok: true, delivery: "email", codeDigits: 8 } } }),
-    });
-    await app.type("id:email", "owner@example.com");
-    await app.press("id:send-code");
-    await app.waitFor("id:code");
-    await app.type("id:code", "00000000");
-    await app.waitUntil(() => hasText(app.texts(), "that code is not right"));
-    expect(app.shows("id:screen-overview")).toBe(false);
-    // The cells were emptied: a fresh code fills them again and goes out as a second try.
-    await app.type("id:code", "11111111");
-    await app.waitUntil(() => app.requests().filter((r) => r.url === `${S}/api/auth/verify`).length === 2);
-    const tries = app.requests().filter((r) => r.url === `${S}/api/auth/verify`).map((r) => JSON.parse(r.body ?? "{}").code);
-    expect(tries).toEqual(["00000000", "11111111"]);
-    app.dispose();
-  });
-
-  test("a wrong code says so and stays on the code step", async () => {
+  test("a wrong code says so and empties the cells for another try", async () => {
     const app = await open("./App.tsx", { network: server(), storage: { server: S } });
     await app.type("id:email", "owner@example.com");
     await app.press("id:send-code");
     await app.waitFor("id:code");
-    await app.type("id:code", "000000");
-    await app.press("id:verify");
+    await app.type("id:code", "AAAAAAAA");
     await app.waitUntil(() => hasText(app.texts(), "that code is not right"));
     expect(app.shows("id:screen-overview")).toBe(false);
+    // The cells were emptied: a fresh code fills them again and goes out as a second try.
+    await app.type("id:code", "BBBBBBBB");
+    await app.waitUntil(() => app.requests().filter((r) => r.url === `${S}/api/auth/verify`).length === 2);
+    const tries = app.requests().filter((r) => r.url === `${S}/api/auth/verify`).map((r) => JSON.parse(r.body ?? "{}").code);
+    expect(tries).toEqual(["AAAAAAAA", "BBBBBBBB"]);
+    app.dispose();
+  });
+
+  test("a short code is not sent", async () => {
+    const app = await open("./App.tsx", { network: server(), storage: { server: S } });
+    await app.type("id:email", "owner@example.com");
+    await app.press("id:send-code");
+    await app.waitFor("id:code");
+    await app.type("id:code", "ABC");
+    await app.press("id:verify");
+    await app.waitUntil(() => hasText(app.texts(), "Enter the code from the email."));
+    expect(app.requests().some((r) => r.url === `${S}/api/auth/verify`)).toBe(false);
     app.dispose();
   });
 
